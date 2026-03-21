@@ -1,0 +1,34 @@
+# Dynamic Traefik configuration for dev environment
+# Traefik watches this file and auto-reloads on changes
+
+http:
+  routers:
+    app1:
+      rule: "Host(`app1.localhost`)"
+      entryPoints:
+        - web
+      service: app1-svc
+
+    app2:
+      rule: "Host(`app2.localhost`)"
+      entryPoints:
+        - web
+      service: app2-svc
+
+    default:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - web
+      service: app1-svc
+      priority: 1
+
+  services:
+    app1-svc:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8081"
+
+    app2-svc:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8082"
