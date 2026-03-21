@@ -1,5 +1,9 @@
 # traefikctl
 
+[![CI](https://github.com/eliasmeireles/traefikctl/actions/workflows/ci.yml/badge.svg)](https://github.com/eliasmeireles/traefikctl/actions/workflows/ci.yml)
+[![Release](https://github.com/eliasmeireles/traefikctl/actions/workflows/release.yml/badge.svg)](https://github.com/eliasmeireles/traefikctl/actions/workflows/release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/eliasmeireles/traefikctl)](https://goreportcard.com/report/github.com/eliasmeireles/traefikctl)
+
 Traefik Control - A CLI tool for managing Traefik proxy configurations.
 
 ## Features
