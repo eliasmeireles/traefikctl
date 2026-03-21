@@ -1,0 +1,19 @@
+# traefikctl Agent Configuration
+# Default location: /etc/traefikctl/config.yaml
+
+# ============================================================================
+# SYNC CONFIGURATION
+# Watches the dynamic config directory for changes
+# ============================================================================
+sync:
+  dynamic-path: /etc/traefik/dynamic  # Directory containing dynamic YAML files
+  interval: 5s                        # How often to check for changes (minimum: 1s)
+  enabled: true                       # Enable automatic sync
+
+# ============================================================================
+# MONITORING CONFIGURATION
+# Health monitoring for configured services
+# ============================================================================
+monitoring:
+  enabled: false                      # Set to true to enable health monitoring
+  interval: 30s                       # Health check interval (minimum: 1s)

@@ -1,0 +1,99 @@
+# Full Setup Example
+# Complete configuration with HTTP domain routing, load balancing, and TCP services
+#
+# This example shows a VPS setup where:
+# - HTTP traffic is routed by domain to different backends
+# - HTTPS is passed through to an internal Traefik/K3s instance
+# - TCP services proxy databases and message queues on the VPN
+
+http:
+  routers:
+    # Domain-based routing
+    fileserver:
+      rule: "Host(`fileserver.example.com`)"
+      entryPoints:
+        - web
+      service: fileserver-svc
+
+    app:
+      rule: "Host(`app.example.com`) || Host(`www.app.example.com`)"
+      entryPoints:
+        - web
+      service: app-svc
+
+    api:
+      rule: "Host(`api.example.com`)"
+      entryPoints:
+        - web
+      service: api-svc
+
+    # Default: forward to internal Traefik/K3s
+    default-http:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - web
+      service: k3s-http-svc
+      priority: 1
+
+  services:
+    fileserver-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.8.0.2:80"
+
+    app-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.8.0.3:8080"
+          - url: "http://10.8.0.4:8080"
+
+    api-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.8.0.5:3000"
+
+    k3s-http-svc:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:32080"
+
+tcp:
+  routers:
+    # HTTPS passthrough to K3s
+    k3s-https:
+      rule: "HostSNI(`*`)"
+      entryPoints:
+        - websecure
+      service: k3s-https-svc
+      tls:
+        passthrough: true
+
+    # Database proxy (VPN only)
+    mysql:
+      rule: "HostSNI(`*`)"
+      entryPoints:
+        - mysql
+      service: mysql-svc
+
+    # Message queue (VPN only)
+    rabbitmq:
+      rule: "HostSNI(`*`)"
+      entryPoints:
+        - rabbitmq
+      service: rabbitmq-svc
+
+  services:
+    k3s-https-svc:
+      loadBalancer:
+        servers:
+          - address: "127.0.0.1:32443"
+
+    mysql-svc:
+      loadBalancer:
+        servers:
+          - address: "127.0.0.1:31306"
+
+    rabbitmq-svc:
+      loadBalancer:
+        servers:
+          - address: "127.0.0.1:31672"

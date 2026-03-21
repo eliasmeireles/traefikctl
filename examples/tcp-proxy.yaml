@@ -1,0 +1,35 @@
+# TCP Proxy
+# Pass-through TCP proxy for databases, message queues, etc.
+#
+# IMPORTANT: Each TCP service needs its own entrypoint defined in traefik.yaml
+# Add to traefik.yaml:
+#   entryPoints:
+#     postgres:
+#       address: ":5432"
+#     rabbitmq:
+#       address: ":5672"
+
+tcp:
+  routers:
+    postgres:
+      rule: "HostSNI(`*`)"
+      entryPoints:
+        - postgres
+      service: postgres-svc
+
+    rabbitmq:
+      rule: "HostSNI(`*`)"
+      entryPoints:
+        - rabbitmq
+      service: rabbitmq-svc
+
+  services:
+    postgres-svc:
+      loadBalancer:
+        servers:
+          - address: "10.8.0.10:5432"
+
+    rabbitmq-svc:
+      loadBalancer:
+        servers:
+          - address: "10.8.0.11:5672"

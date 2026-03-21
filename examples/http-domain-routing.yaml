@@ -1,0 +1,43 @@
+# Multi-Domain Routing
+# Multiple domains on the same port, each routed to a different backend
+# Useful for VPS setups where traffic arrives by domain and is proxied to internal servers
+
+http:
+  routers:
+    # Route fileserver.example.com to a file server on VPN
+    fileserver:
+      rule: "Host(`fileserver.example.com`)"
+      entryPoints:
+        - web
+      service: fileserver-svc
+
+    # Route app.example.com and www.app.example.com to an app server
+    app:
+      rule: "Host(`app.example.com`) || Host(`www.app.example.com`)"
+      entryPoints:
+        - web
+      service: app-svc
+
+    # Default catch-all (lowest priority)
+    default:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - web
+      service: default-svc
+      priority: 1
+
+  services:
+    fileserver-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.8.0.2:80"
+
+    app-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.8.0.3:8080"
+
+    default-svc:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8080"

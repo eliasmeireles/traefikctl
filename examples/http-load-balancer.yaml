@@ -1,0 +1,22 @@
+# HTTP Load Balancer
+# Distributes traffic across multiple backend servers
+
+http:
+  routers:
+    web-app:
+      rule: "Host(`app.example.com`)"
+      entryPoints:
+        - web
+      service: web-app-svc
+
+  services:
+    web-app-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.8.0.2:8080"
+          - url: "http://10.8.0.3:8080"
+          - url: "http://10.8.0.4:8080"
+        healthCheck:
+          path: /health
+          interval: 10s
+          timeout: 3s

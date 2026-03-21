@@ -1,0 +1,19 @@
+# Simple HTTP Reverse Proxy
+# Routes all traffic on port 80 to a backend server
+#
+# Place in /etc/traefik/dynamic/ - Traefik auto-reloads on changes
+# Or add via CLI: traefikctl resource add --domain app.example.com --address 10.8.0.2:8080 --name my-app
+
+http:
+  routers:
+    my-app:
+      rule: "Host(`app.example.com`)"
+      entryPoints:
+        - web
+      service: my-app-svc
+
+  services:
+    my-app-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.8.0.2:8080"
