@@ -104,7 +104,7 @@ func addHTTPResource(cfg *DynamicConfig, filePath string) error {
 	}
 
 	// Build router rule
-	rule := fmt.Sprintf("PathPrefix(`/`)")
+	rule := "PathPrefix(`/`)"
 	if addDomain != "" {
 		rule = fmt.Sprintf("Host(`%s`)", addDomain)
 	}

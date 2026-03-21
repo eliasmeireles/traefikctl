@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
 )
 
@@ -28,11 +25,3 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "/etc/traefikctl/config.yaml", "config file path")
 }
 
-func exitWithError(msg string, err error) {
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: %v\n", msg, err)
-	} else {
-		fmt.Fprintln(os.Stderr, msg)
-	}
-	os.Exit(1)
-}

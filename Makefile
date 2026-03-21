@@ -1,34 +1,63 @@
-BINARY_NAME=traefikctl
-VERSION?=dev
-BUILD_DIR=build
-LDFLAGS=-ldflags "-X github.com/eliasmeireles/traefikctl/internal/cmd.Version=$(VERSION)"
+.PHONY: build clean install test lint fmt help version version-push
 
-.PHONY: build clean test lint fmt install
+BINARY_NAME=traefikctl
+BUILD_DIR=build
+GO=go
+GOFLAGS=-v
+VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS=-ldflags "-s -w -X github.com/eliasmeireles/traefikctl/internal/cmd.Version=$(VERSION)"
+
+help:
+	@echo "Available targets:"
+	@echo "  build          - Build the binary"
+	@echo "  clean          - Remove build artifacts"
+	@echo "  install        - Install the binary to /usr/local/bin"
+	@echo "  test           - Run tests with coverage"
+	@echo "  lint           - Run linters"
+	@echo "  fmt            - Format code"
+	@echo "  version        - Show current version"
+	@echo "  version-push   - Push version tag to trigger release"
 
 build:
 	@echo "Building $(BINARY_NAME)..."
-	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/traefikctl
+	@mkdir -p $(BUILD_DIR)
+	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/traefikctl
 
 clean:
 	@echo "Cleaning..."
-	rm -rf $(BUILD_DIR)
+	@rm -rf $(BUILD_DIR)
+	@$(GO) clean
+
+install: build
+	@echo "Installing $(BINARY_NAME) to /usr/local/bin..."
+	@sudo cp $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/
+	@sudo chmod +x /usr/local/bin/$(BINARY_NAME)
+	@echo "Installed successfully"
 
 test:
 	@echo "Running tests..."
-	go test -v -race -coverprofile=coverage.out ./...
-	go tool cover -func=coverage.out
+	$(GO) test -v -race -coverprofile=coverage.out ./...
+	$(GO) tool cover -html=coverage.out -o coverage.html
 
 lint:
 	@echo "Running linters..."
+	@which golangci-lint > /dev/null || (echo "golangci-lint not found, install it from https://golangci-lint.run/usage/install/" && exit 1)
 	golangci-lint run ./...
 
 fmt:
 	@echo "Formatting code..."
-	gofmt -w .
-	goimports -w .
+	$(GO) fmt ./...
+	@which goimports > /dev/null && goimports -w . || echo "goimports not found, skipping"
 
-install: build
-	@echo "Installing $(BINARY_NAME)..."
-	sudo cp $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/$(BINARY_NAME)
-	sudo chmod +x /usr/local/bin/$(BINARY_NAME)
-	@echo "Installed to /usr/local/bin/$(BINARY_NAME)"
+version:
+	@echo $(VERSION)
+
+version-push:
+	@if [ -z "$(TAG)" ]; then \
+		echo "Error: TAG is required"; \
+		echo "Usage: make version-push TAG=v0.1.0"; \
+		exit 1; \
+	fi
+	@echo "Pushing tag $(TAG)..."
+	@git push origin $(TAG)
+	@echo "Tag $(TAG) pushed. GitHub Actions will build the release."

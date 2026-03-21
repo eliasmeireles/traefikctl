@@ -19,19 +19,19 @@ func SetDebug(enabled bool) {
 }
 
 func Info(format string, args ...interface{}) {
-	infoLogger.Output(2, fmt.Sprintf(format, args...))
+	_ = infoLogger.Output(2, fmt.Sprintf(format, args...))
 }
 
 func Warn(format string, args ...interface{}) {
-	warnLogger.Output(2, fmt.Sprintf(format, args...))
+	_ = warnLogger.Output(2, fmt.Sprintf(format, args...))
 }
 
 func Error(format string, args ...interface{}) {
-	errorLogger.Output(2, fmt.Sprintf(format, args...))
+	_ = errorLogger.Output(2, fmt.Sprintf(format, args...))
 }
 
 func Debug(format string, args ...interface{}) {
 	if debugEnabled {
-		debugLogger.Output(2, fmt.Sprintf(format, args...))
+		_ = debugLogger.Output(2, fmt.Sprintf(format, args...))
 	}
 }

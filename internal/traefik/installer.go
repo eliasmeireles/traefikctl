@@ -46,11 +46,10 @@ func (i *Installer) Install(version string) error {
 	}
 
 	arch := runtime.GOARCH
-	if arch == "amd64" {
-		arch = "amd64"
-	} else if arch == "arm64" {
-		arch = "arm64"
-	} else {
+	switch arch {
+	case "amd64", "arm64":
+		// supported
+	default:
 		return fmt.Errorf("unsupported architecture: %s", arch)
 	}
 
