@@ -1,0 +1,7 @@
+build/
+coverage.out
+*.exe
+*.test
+*.prof
+.idea/
+.vscode/
