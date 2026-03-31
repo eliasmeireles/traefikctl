@@ -27,9 +27,13 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=traefikctl
 
+# Allow binding to privileged ports (80, 443) as non-root
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
 # Security settings
 NoNewPrivileges=true
-ProtectSystem=strict
+ProtectSystem=full
 ProtectHome=true
 ReadWritePaths=/etc/traefik /var/log/traefik
 

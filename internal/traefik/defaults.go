@@ -39,11 +39,6 @@ providers:
   file:
     directory: /etc/traefik/dynamic/
     watch: true
-
-serversTransport:
-  dialTimeout: 5s
-  responseHeaderTimeout: 50s
-  idleConnTimeout: 50s
 `
 
 const DefaultDynamicExample = `# Example traefikctl dynamic configuration
