@@ -80,6 +80,20 @@ var serviceLogsCmd = &cobra.Command{
 	RunE:         runServiceLogs,
 }
 
+var serviceRestartCmd = &cobra.Command{
+	Use:          "restart",
+	Short:        "Restart the Traefik service",
+	SilenceUsage: true,
+	RunE:         runServiceRestart,
+}
+
+var serviceReloadCmd = &cobra.Command{
+	Use:          "reload",
+	Short:        "Reload Traefik config without full restart (systemctl reload)",
+	SilenceUsage: true,
+	RunE:         runServiceReload,
+}
+
 func init() {
 	serviceInstallCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
 	serviceUninstallCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
@@ -88,10 +102,14 @@ func init() {
 	serviceLogsCmd.Flags().BoolVarP(&svcLogsFollow, "follow", "f", true, "Follow log output")
 	serviceLogsCmd.Flags().IntVarP(&svcLogsLines, "lines", "n", 50, "Number of lines to show")
 
+	serviceRestartCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
+	serviceReloadCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
 	serviceCmd.AddCommand(serviceInstallCmd)
 	serviceCmd.AddCommand(serviceUninstallCmd)
 	serviceCmd.AddCommand(serviceStatusCmd)
 	serviceCmd.AddCommand(serviceLogsCmd)
+	serviceCmd.AddCommand(serviceRestartCmd)
+	serviceCmd.AddCommand(serviceReloadCmd)
 	rootCmd.AddCommand(serviceCmd)
 }
 
@@ -147,6 +165,22 @@ func runServiceStatus(cmd *cobra.Command, args []string) error {
 
 func runServiceLogs(cmd *cobra.Command, args []string) error {
 	return journalctlLogs(serviceName, svcLogsFollow, svcLogsLines)
+}
+
+func runServiceRestart(cmd *cobra.Command, args []string) error {
+	if err := systemctl("restart", serviceName); err != nil {
+		return fmt.Errorf("failed to restart service: %w", err)
+	}
+	logger.Info("Service '%s' restarted", serviceName)
+	return nil
+}
+
+func runServiceReload(cmd *cobra.Command, args []string) error {
+	if err := systemctl("reload", serviceName); err != nil {
+		return fmt.Errorf("failed to reload service (not all services support reload): %w", err)
+	}
+	logger.Info("Service '%s' config reloaded", serviceName)
+	return nil
 }
 
 func systemctl(args ...string) error {
