@@ -4,15 +4,19 @@
 [![Release](https://github.com/eliasmeireles/traefikctl/actions/workflows/release.yml/badge.svg)](https://github.com/eliasmeireles/traefikctl/actions/workflows/release.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/eliasmeireles/traefikctl)](https://goreportcard.com/report/github.com/eliasmeireles/traefikctl)
 
-Traefik Control - A CLI tool for managing Traefik proxy configurations.
+Traefik Control — A CLI tool for managing Traefik proxy configurations.
 
 ## Features
 
 - **Binary Installation**: Download and install Traefik from GitHub releases
-- **Config Management**: Generate and view static + dynamic configurations
-- **Systemd Service**: Install, manage, and monitor Traefik as a system service
-- **System Checks**: Validate permissions, directories, and configuration
-- **Domain-Based Routing**: Simple YAML-based host routing with hot-reload
+- **Config Management**: Generate, view, and extend static + dynamic configurations
+- **Systemd Service**: Install, start, stop, restart, reload, and tail logs
+- **Route Management**: Add, list, check, copy, enable, disable HTTP and TCP routes
+- **Backend Management**: Add or remove upstream servers for load balancing
+- **Middleware Management**: Add, list, and remove middlewares (redirect-https, rate-limit, basic-auth, strip-prefix)
+- **HTTPS / Let's Encrypt**: One-command TLS and ACME configuration
+- **Status Dashboard**: Service state, Traefik version, and route count at a glance
+- **Self-Update**: Download and install the latest traefikctl release
 
 ## Installation
 
@@ -23,17 +27,18 @@ make build
 sudo make install
 ```
 
-### Install Traefik
+### Quick install script
 
 ```bash
-# Install Traefik binary (downloads from GitHub releases)
+curl -fsSL https://raw.githubusercontent.com/eliasmeireles/traefikctl/main/install.sh | bash
+```
+
+### Install Traefik binary
+
+```bash
 sudo traefikctl install
-
-# Check if installed
-traefikctl install --check
-
-# Install specific version
-sudo traefikctl install --version v3.3.5
+sudo traefikctl install --version v3.3.5   # specific version
+traefikctl install --check                 # verify installed version
 ```
 
 ## Quick Start
@@ -45,19 +50,56 @@ sudo traefikctl install
 # 2. Generate initial configs
 sudo traefikctl config --generate
 
-# 3. Install systemd service
+# 3. Install and start the systemd service
 sudo traefikctl service install
-
-# 4. Start the service
 sudo systemctl start traefikctl
 
-# 5. Validate setup
-traefikctl check
+# 4. Add your first route
+sudo traefikctl resource add --name my-app --domain app.example.com --address 10.0.0.2:8080
+
+# 5. Check status
+traefikctl status
 ```
 
-## Usage
+## Commands
 
-### Config Management
+### version
+
+```bash
+traefikctl version
+traefikctl --version
+```
+
+### status
+
+Show service state, Traefik version, and a summary of all configured routes.
+
+```bash
+traefikctl status
+```
+
+### logs
+
+Tail Traefik logs via journalctl or log file.
+
+```bash
+traefikctl logs                  # follow mode (default)
+traefikctl logs --follow=false   # print last lines and exit
+traefikctl logs -n 100           # show last 100 lines
+```
+
+### update
+
+Self-update traefikctl to the latest release from GitHub.
+
+```bash
+sudo traefikctl update                    # latest release
+sudo traefikctl update --version v0.1.0  # specific version
+```
+
+---
+
+### config
 
 ```bash
 # Generate static + dynamic config files
@@ -71,29 +113,139 @@ traefikctl config --view
 
 # View only active config (without comments)
 traefikctl config --view --clean
+
+# Append Let's Encrypt ACME config
+sudo traefikctl config --acme --acme-email you@example.com
 ```
 
-### Service Management
+---
+
+### service
 
 ```bash
-# Install systemd service
-sudo traefikctl service install
-
-# Check status
-traefikctl service status
-
-# Uninstall service
-sudo traefikctl service uninstall
+sudo traefikctl service install     # install systemd unit
+sudo traefikctl service uninstall   # remove systemd unit
+traefikctl service status           # check service state
+traefikctl service logs             # tail service logs
+sudo traefikctl service restart     # full restart
+sudo traefikctl service reload      # hot reload (no downtime)
 ```
 
-### System Check
+---
+
+### resource add
+
+Add an HTTP or TCP route to the dynamic config.
 
 ```bash
-# Validate everything is configured correctly
-traefikctl check
+# Basic HTTP route
+sudo traefikctl resource add --name my-app --domain app.example.com --address 10.0.0.2:8080
+
+# HTTPS with Let's Encrypt
+sudo traefikctl resource add --name my-app --domain app.example.com --address 10.0.0.2:8080 \
+  --redirect-https --tls --cert-resolver letsencrypt
+
+# Attach an existing middleware
+sudo traefikctl resource add --name my-api --domain api.example.com --address 10.0.0.3:3000 \
+  --entrypoint websecure --middleware my-rate-limit
+
+# TCP route
+sudo traefikctl resource add --name postgres --address 10.0.0.10:5432 --type tcp --entrypoint postgres
 ```
 
-## Configuration
+| Flag | Default | Description |
+|---|---|---|
+| `--name` | required | Router and service name |
+| `--address` | required | Backend address (`ip:port`) |
+| `--domain` | — | Host rule (`Host(\`...\`)`) |
+| `--entrypoint` | `web` | Traefik entrypoint |
+| `--type` | `http` | `http` or `tcp` |
+| `--middleware` | — | Attach middleware(s) by name (repeatable) |
+| `--redirect-https` | false | Auto HTTP→HTTPS redirect |
+| `--tls` | false | Enable TLS on the router |
+| `--cert-resolver` | — | Let's Encrypt resolver name |
+
+### resource list
+
+List all configured HTTP and TCP routes across all dynamic config files.
+
+```bash
+traefikctl resource list
+```
+
+### resource check
+
+Test backend reachability for all routes.
+
+```bash
+traefikctl resource check
+traefikctl resource check --timeout 5s
+```
+
+### resource enable / disable
+
+Toggle a route on or off without deleting it.
+
+```bash
+sudo traefikctl resource disable --name my-app
+sudo traefikctl resource enable  --name my-app
+```
+
+Disabled configs are stored in `/etc/traefikctl/disabled/`.
+
+### resource copy
+
+Clone an existing route to a new name and/or domain.
+
+```bash
+sudo traefikctl resource copy --from my-app --name my-app-staging --domain staging.example.com
+```
+
+### resource backend add / remove
+
+Add or remove upstream servers from a service's load balancer pool.
+
+```bash
+sudo traefikctl resource backend add    --name my-app --address 10.0.0.3:8080
+sudo traefikctl resource backend remove --name my-app --address 10.0.0.3:8080
+```
+
+---
+
+### middleware add
+
+```bash
+# HTTP → HTTPS redirect
+sudo traefikctl middleware add --name redirect-to-https --type redirect-https
+
+# Rate limit (10 req/s, burst 20)
+sudo traefikctl middleware add --name api-limit --type rate-limit \
+  --opt average=10 --opt burst=20
+
+# Basic auth
+sudo traefikctl middleware add --name admin-auth --type basic-auth \
+  --opt users=admin:$$apr1$$...
+
+# Strip prefix
+sudo traefikctl middleware add --name strip-api --type strip-prefix \
+  --opt prefix=/api
+```
+
+### middleware list
+
+```bash
+traefikctl middleware list
+```
+
+### middleware remove
+
+```bash
+sudo traefikctl middleware remove --name api-limit
+```
+
+---
+
+## Configuration Files
 
 ### Static Config (`/etc/traefik/traefik.yaml`)
 
@@ -101,55 +253,25 @@ Controls entrypoints, TLS, providers, and logging. Generated by `traefikctl conf
 
 ### Dynamic Config (`/etc/traefik/dynamic/*.yaml`)
 
-Defines routers, services, and middlewares. Traefik watches this directory and applies changes automatically (no restart needed).
-
-#### HTTP Domain Routing
-
-```yaml
-http:
-  routers:
-    my-app:
-      rule: "Host(`app.example.com`)"
-      entryPoints:
-        - web
-      service: my-app-svc
-
-  services:
-    my-app-svc:
-      loadBalancer:
-        servers:
-          - url: "http://10.8.0.2:8080"
-```
-
-#### TCP Proxy
-
-```yaml
-tcp:
-  routers:
-    postgres:
-      rule: "HostSNI(`*`)"
-      entryPoints:
-        - postgres
-      service: postgres-svc
-
-  services:
-    postgres-svc:
-      loadBalancer:
-        servers:
-          - address: "10.8.0.10:5432"
-```
+Defines routers, services, and middlewares. Traefik watches this directory and applies changes automatically — no restart needed.
 
 ## Directory Structure
 
 ```
 /etc/traefik/
-├── traefik.yaml           # Static config (entrypoints, TLS, providers)
-└── dynamic/               # Dynamic configs (auto-reloaded)
+├── traefik.yaml           # Static config
+├── acme.json              # Let's Encrypt certificates
+└── dynamic/               # Hot-reloaded configs
     └── *.yaml
 
-/var/log/traefik/
-├── traefik.log            # General logs
-└── access.log             # Access logs
+/etc/traefikctl/
+└── disabled/              # Disabled route snapshots
 
-/usr/local/bin/traefik     # Traefik binary
+/var/log/traefik/
+├── traefik.log
+└── access.log
+
+/usr/local/bin/
+├── traefik                # Traefik binary
+└── traefikctl             # This CLI
 ```
