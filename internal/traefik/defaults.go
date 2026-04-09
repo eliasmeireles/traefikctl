@@ -107,3 +107,15 @@ const DefaultDynamicExample = `# Example traefikctl dynamic configuration
 #         servers:
 #           - address: "10.8.0.10:5432"
 `
+
+// DefaultACMEConfig is an ACME/Let's Encrypt config block appended to traefik.yaml.
+// The single %s placeholder is the email address.
+const DefaultACMEConfig = `
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: %s
+      storage: /etc/traefik/acme.json
+      httpChallenge:
+        entryPoint: web
+`

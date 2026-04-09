@@ -11,13 +11,16 @@ import (
 )
 
 var (
-	addDomain      string
-	addAddress     string
-	addName        string
-	addEntrypoint  string
-	addType        string
-	addFile        string
-	addMiddlewares []string
+	addDomain        string
+	addAddress       string
+	addName          string
+	addEntrypoint    string
+	addType          string
+	addFile          string
+	addMiddlewares   []string
+	addRedirectHTTPS bool
+	addTLS           bool
+	addCertResolver  string
 )
 
 var resourceAddCmd = &cobra.Command{
@@ -43,6 +46,9 @@ func init() {
 	resourceAddCmd.Flags().StringVar(&addType, "type", "http", "Type: http or tcp")
 	resourceAddCmd.Flags().StringVar(&addFile, "file", "", "Dynamic config file (skip selection prompt)")
 	resourceAddCmd.Flags().StringArrayVar(&addMiddlewares, "middleware", nil, "Attach middleware(s) by name (repeatable)")
+	resourceAddCmd.Flags().BoolVar(&addRedirectHTTPS, "redirect-https", false, "Add HTTP→HTTPS redirect middleware automatically")
+	resourceAddCmd.Flags().BoolVar(&addTLS, "tls", false, "Enable TLS on the router")
+	resourceAddCmd.Flags().StringVar(&addCertResolver, "cert-resolver", "", "Let's Encrypt cert resolver name (e.g. letsencrypt)")
 
 	_ = resourceAddCmd.MarkFlagRequired("address")
 	_ = resourceAddCmd.MarkFlagRequired("name")
@@ -114,11 +120,38 @@ func addHTTPResource(cfg *DynamicConfig, filePath string) error {
 	svcName := addName + "-svc"
 
 	// Create router
-	cfg.HTTP.Routers[addName] = &Router{
+	router := &Router{
 		Rule:        rule,
 		EntryPoints: []string{addEntrypoint},
 		Service:     svcName,
 		Middlewares: addMiddlewares,
+	}
+
+	if addTLS || addCertResolver != "" {
+		router.TLS = &RouterTLS{}
+		if addCertResolver != "" {
+			router.TLS.CertResolver = addCertResolver
+		}
+	}
+
+	cfg.HTTP.Routers[addName] = router
+
+	if addRedirectHTTPS {
+		const redirectMWName = "redirect-to-https"
+		if cfg.HTTP.Middlewares == nil {
+			cfg.HTTP.Middlewares = map[string]*MiddlewareConfig{}
+		}
+		cfg.HTTP.Middlewares[redirectMWName] = &MiddlewareConfig{
+			RedirectScheme: &RedirectScheme{Scheme: "https", Permanent: true},
+		}
+		httpRouterName := addName + "-http"
+		cfg.HTTP.Routers[httpRouterName] = &Router{
+			Rule:        rule,
+			EntryPoints: []string{"web"},
+			Service:     svcName,
+			Middlewares: []string{redirectMWName},
+		}
+		logger.Info("Created HTTP redirect router '%s' with middleware '%s'", httpRouterName, redirectMWName)
 	}
 
 	// Create service

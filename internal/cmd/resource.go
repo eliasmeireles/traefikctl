@@ -46,12 +46,18 @@ type TCPConfig struct {
 	Services map[string]*TCPService `yaml:"services,omitempty"`
 }
 
+// RouterTLS configures TLS for an HTTP router.
+type RouterTLS struct {
+	CertResolver string `yaml:"certResolver,omitempty"`
+}
+
 type Router struct {
-	Rule        string   `yaml:"rule"`
-	EntryPoints []string `yaml:"entryPoints"`
-	Service     string   `yaml:"service"`
-	Middlewares []string `yaml:"middlewares,omitempty"`
-	Priority    int      `yaml:"priority,omitempty"`
+	Rule        string     `yaml:"rule"`
+	EntryPoints []string   `yaml:"entryPoints"`
+	Service     string     `yaml:"service"`
+	Middlewares []string   `yaml:"middlewares,omitempty"`
+	TLS         *RouterTLS `yaml:"tls,omitempty"`
+	Priority    int        `yaml:"priority,omitempty"`
 }
 
 type Service struct {

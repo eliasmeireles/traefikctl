@@ -14,10 +14,12 @@ import (
 )
 
 var (
-	cfgGenerate bool
-	cfgView     bool
-	cfgForce    bool
-	cfgClean    bool
+	cfgGenerate  bool
+	cfgView      bool
+	cfgForce     bool
+	cfgClean     bool
+	cfgACME      bool
+	cfgACMEEmail string
 )
 
 var configCmd = &cobra.Command{
@@ -43,10 +45,16 @@ func init() {
 	configCmd.Flags().BoolVar(&cfgView, "view", false, "View current configurations")
 	configCmd.Flags().BoolVar(&cfgClean, "clean", false, "Strip comments and empty lines (use with --view)")
 	configCmd.Flags().BoolVar(&cfgForce, "force", false, "Overwrite existing files (use with --generate)")
+	configCmd.Flags().BoolVar(&cfgACME, "acme", false, "Append Let's Encrypt ACME config to traefik.yaml")
+	configCmd.Flags().StringVar(&cfgACMEEmail, "acme-email", "", "Email for Let's Encrypt (required with --acme)")
 	rootCmd.AddCommand(configCmd)
 }
 
 func runConfig(cmd *cobra.Command, args []string) error {
+	if cfgACME {
+		return appendACMEConfig(cfgACMEEmail)
+	}
+
 	if cfgGenerate && cfgView {
 		return fmt.Errorf("cannot use --generate and --view together")
 	}
@@ -191,6 +199,39 @@ func printConfigFile(path string, clean bool) error {
 	}
 
 	return scanner.Err()
+}
+
+// appendACMEConfig appends a Let's Encrypt ACME resolver block to the static Traefik config
+// and ensures the acme.json storage file exists.
+func appendACMEConfig(email string) error {
+	if email == "" {
+		return fmt.Errorf("--acme-email is required with --acme")
+	}
+
+	staticPath := "/etc/traefik/traefik.yaml"
+	acmePath := "/etc/traefik/acme.json"
+
+	f, err := os.OpenFile(staticPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return permissionHint("append ACME config to", staticPath, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if _, err := f.WriteString(fmt.Sprintf(traefik.DefaultACMEConfig, email)); err != nil {
+		return fmt.Errorf("failed to write ACME config: %w", err)
+	}
+
+	if _, statErr := os.Stat(acmePath); os.IsNotExist(statErr) {
+		if createErr := os.WriteFile(acmePath, []byte("{}"), 0600); createErr != nil {
+			logger.Warn("Failed to create %s: %v", acmePath, createErr)
+		} else {
+			logger.Info("Created %s (Traefik will write certificates here)", acmePath)
+		}
+	}
+
+	logger.Info("ACME config appended to %s", staticPath)
+	logger.Info("Restart Traefik: sudo traefikctl service restart")
+	return nil
 }
 
 func permissionHint(action, path string, err error) error {
