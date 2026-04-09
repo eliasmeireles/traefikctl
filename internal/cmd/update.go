@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -18,6 +19,8 @@ const (
 	downloadURLPattern   = "https://github.com/eliasmeireles/traefikctl/releases/download/%s/traefikctl_%s_%s"
 	installPath          = "/usr/local/bin/traefikctl"
 )
+
+var httpClient = &http.Client{Timeout: 60 * time.Second}
 
 var updateVersion string
 
@@ -71,7 +74,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 // fetchLatestVersion queries the GitHub releases API at apiURL and returns the tag_name of the latest release.
 func fetchLatestVersion(apiURL string) (string, error) {
-	resp, err := http.Get(apiURL) //nolint:gosec
+	resp, err := httpClient.Get(apiURL) //nolint:gosec
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
@@ -97,7 +100,7 @@ func fetchLatestVersion(apiURL string) (string, error) {
 
 // downloadToTemp downloads the binary at url to a temporary file and returns its path.
 func downloadToTemp(url string) (string, error) {
-	resp, err := http.Get(url) //nolint:gosec
+	resp, err := httpClient.Get(url) //nolint:gosec
 	if err != nil {
 		return "", err
 	}

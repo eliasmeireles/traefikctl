@@ -3,6 +3,7 @@ package cmd
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -47,6 +48,35 @@ func TestFetchLatestVersion(t *testing.T) {
 		defer srv.Close()
 
 		_, err := fetchLatestVersion(srv.URL + "/repos/eliasmeireles/traefikctl/releases/latest")
+		require.Error(t, err)
+	})
+}
+
+func TestDownloadToTemp(t *testing.T) {
+	t.Run("given 200 response then returns temp file containing body", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("hello"))
+		}))
+		defer srv.Close()
+
+		path, err := downloadToTemp(srv.URL + "/binary")
+		require.NoError(t, err)
+		require.NotEmpty(t, path)
+
+		content, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "hello", string(content))
+
+		require.NoError(t, os.Remove(path))
+	})
+
+	t.Run("given non-200 response then returns error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer srv.Close()
+
+		_, err := downloadToTemp(srv.URL + "/binary")
 		require.Error(t, err)
 	})
 }
