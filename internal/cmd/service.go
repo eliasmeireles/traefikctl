@@ -42,9 +42,9 @@ WantedBy=multi-user.target
 `
 
 var (
-	serviceName       string
-	svcLogsFollow     bool
-	svcLogsLines      int
+	serviceName   string
+	svcLogsFollow bool
+	svcLogsLines  int
 )
 
 var serviceCmd = &cobra.Command{

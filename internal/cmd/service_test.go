@@ -12,6 +12,11 @@ func TestServiceCommandsRegistered(t *testing.T) {
 		cmds[sub.Use] = true
 	}
 
-	assert.True(t, cmds["restart"], "restart subcommand must be registered")
-	assert.True(t, cmds["reload"], "reload subcommand must be registered")
+	t.Run("must have restart subcommand registered", func(t *testing.T) {
+		assert.True(t, cmds["restart"])
+	})
+
+	t.Run("must have reload subcommand registered", func(t *testing.T) {
+		assert.True(t, cmds["reload"])
+	})
 }
