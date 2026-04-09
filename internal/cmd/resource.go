@@ -163,9 +163,13 @@ func promptSelect(prompt string, max int) (int, error) {
 }
 
 // loadDynamicConfig loads a Traefik dynamic config from a YAML file.
+// Returns an empty config when the file does not exist.
 func loadDynamicConfig(path string) (*DynamicConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return &DynamicConfig{}, nil
+		}
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
