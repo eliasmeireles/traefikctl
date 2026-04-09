@@ -211,13 +211,21 @@ func appendACMEConfig(email string) error {
 	staticPath := "/etc/traefik/traefik.yaml"
 	acmePath := "/etc/traefik/acme.json"
 
+	existing, readErr := os.ReadFile(staticPath)
+	if readErr != nil {
+		return permissionHint("read static config", staticPath, readErr)
+	}
+	if strings.Contains(string(existing), "certificatesResolvers:") {
+		return fmt.Errorf("ACME config already present in %s — remove the certificatesResolvers block first", staticPath)
+	}
+
 	f, err := os.OpenFile(staticPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return permissionHint("append ACME config to", staticPath, err)
 	}
 	defer func() { _ = f.Close() }()
 
-	if _, err := f.WriteString(fmt.Sprintf(traefik.DefaultACMEConfig, email)); err != nil {
+	if _, err := fmt.Fprintf(f, traefik.DefaultACMEConfig, email); err != nil {
 		return fmt.Errorf("failed to write ACME config: %w", err)
 	}
 

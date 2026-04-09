@@ -24,4 +24,3 @@ func Execute() error {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "/etc/traefikctl/config.yaml", "config file path")
 }
-

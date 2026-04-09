@@ -144,6 +144,10 @@ func addHTTPResource(cfg *DynamicConfig, filePath string) error {
 		cfg.HTTP.Middlewares[redirectMWName] = &MiddlewareConfig{
 			RedirectScheme: &RedirectScheme{Scheme: "https", Permanent: true},
 		}
+		// Move the main router to websecure and create an HTTP router that redirects.
+		router.EntryPoints = []string{"websecure"}
+		cfg.HTTP.Routers[addName] = router
+
 		httpRouterName := addName + "-http"
 		cfg.HTTP.Routers[httpRouterName] = &Router{
 			Rule:        rule,
@@ -151,7 +155,7 @@ func addHTTPResource(cfg *DynamicConfig, filePath string) error {
 			Service:     svcName,
 			Middlewares: []string{redirectMWName},
 		}
-		logger.Info("Created HTTP redirect router '%s' with middleware '%s'", httpRouterName, redirectMWName)
+		logger.Info("Created HTTP redirect router '%s' -> websecure via middleware '%s'", httpRouterName, redirectMWName)
 	}
 
 	// Create service
