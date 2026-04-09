@@ -13,8 +13,9 @@ import (
 const disabledDir = "/etc/traefikctl/disabled"
 
 var (
-	toggleName string
-	toggleFile string
+	enableName  string
+	disableName string
+	disableFile string
 )
 
 var resourceEnableCmd = &cobra.Command{
@@ -41,9 +42,9 @@ Example:
 }
 
 func init() {
-	resourceEnableCmd.Flags().StringVar(&toggleName, "name", "", "Router name")
-	resourceDisableCmd.Flags().StringVar(&toggleName, "name", "", "Router name")
-	resourceDisableCmd.Flags().StringVar(&toggleFile, "file", "", "Dynamic config file (skip selection prompt)")
+	resourceEnableCmd.Flags().StringVar(&enableName, "name", "", "Router name")
+	resourceDisableCmd.Flags().StringVar(&disableName, "name", "", "Router name")
+	resourceDisableCmd.Flags().StringVar(&disableFile, "file", "", "Dynamic config file (skip selection prompt)")
 
 	_ = resourceEnableCmd.MarkFlagRequired("name")
 	_ = resourceDisableCmd.MarkFlagRequired("name")
@@ -53,17 +54,17 @@ func init() {
 }
 
 func runResourceDisable(cmd *cobra.Command, args []string) error {
-	filePath, err := selectDynamicFile(toggleFile)
+	filePath, err := selectDynamicFile(disableFile)
 	if err != nil {
 		return err
 	}
 
-	if err := disableRouter(toggleName, filePath, disabledDir); err != nil {
+	if err := disableRouter(disableName, filePath, disabledDir); err != nil {
 		return err
 	}
 
-	logger.Info("Router '%s' disabled (saved to %s/%s.yaml)", toggleName, disabledDir, toggleName)
-	logger.Info("Re-enable with: traefikctl resource enable --name %s", toggleName)
+	logger.Info("Router '%s' disabled (saved to %s/%s.yaml)", disableName, disabledDir, disableName)
+	logger.Info("Re-enable with: traefikctl resource enable --name %s", disableName)
 	return nil
 }
 
@@ -82,14 +83,15 @@ func runResourceEnable(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
+		// No dynamic files exist yet; write the restored router to the default location.
 		targetFile = filepath.Join(defaultDynamicDir, "services.yaml")
 	}
 
-	if err := enableRouter(toggleName, targetFile, disabledDir); err != nil {
+	if err := enableRouter(enableName, targetFile, disabledDir); err != nil {
 		return err
 	}
 
-	logger.Info("Router '%s' re-enabled in %s", toggleName, targetFile)
+	logger.Info("Router '%s' re-enabled in %s", enableName, targetFile)
 	return nil
 }
 
@@ -170,14 +172,9 @@ func enableRouter(name, targetFile, dDir string) error {
 		return fmt.Errorf("disabled snapshot not found for '%s': %w", name, err)
 	}
 
-	var cfg *DynamicConfig
-	if _, statErr := os.Stat(targetFile); os.IsNotExist(statErr) {
-		cfg = &DynamicConfig{}
-	} else {
-		cfg, err = loadDynamicConfig(targetFile)
-		if err != nil {
-			return err
-		}
+	cfg, err := loadDynamicConfig(targetFile)
+	if err != nil {
+		return err
 	}
 
 	if snapshot.HTTP != nil {

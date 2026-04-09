@@ -49,3 +49,38 @@ func TestDisableAndEnableHTTPRouter(t *testing.T) {
 		require.Contains(t, reactivated.HTTP.Routers, "my-app")
 	})
 }
+
+func TestDisableAndEnableTCPRouter(t *testing.T) {
+	dir := t.TempDir()
+	disabledDir := filepath.Join(dir, "disabled")
+	activeFile := filepath.Join(dir, "services.yaml")
+
+	cfg := &DynamicConfig{
+		TCP: &TCPConfig{
+			Routers: map[string]*TCPRouter{
+				"pg": {Rule: "HostSNI(`*`)", EntryPoints: []string{"postgres"}, Service: "pg-svc"},
+			},
+			Services: map[string]*TCPService{
+				"pg-svc": {LoadBalancer: &TCPLoadBalancer{Servers: []ServerAddress{{Address: "127.0.0.1:5432"}}}},
+			},
+		},
+	}
+	require.NoError(t, saveDynamicConfig(activeFile, cfg))
+
+	t.Run("given active TCP router when disabled then removed from active config", func(t *testing.T) {
+		require.NoError(t, disableRouter("pg", activeFile, disabledDir))
+
+		restored, err := loadDynamicConfig(activeFile)
+		require.NoError(t, err)
+		require.Nil(t, restored.TCP)
+	})
+
+	t.Run("given disabled TCP router when enabled then restored", func(t *testing.T) {
+		require.NoError(t, enableRouter("pg", activeFile, disabledDir))
+
+		reactivated, err := loadDynamicConfig(activeFile)
+		require.NoError(t, err)
+		require.NotNil(t, reactivated.TCP)
+		require.Contains(t, reactivated.TCP.Routers, "pg")
+	})
+}
