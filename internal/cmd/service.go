@@ -42,7 +42,9 @@ WantedBy=multi-user.target
 `
 
 var (
-	serviceName string
+	serviceName       string
+	svcLogsFollow     bool
+	svcLogsLines      int
 )
 
 var serviceCmd = &cobra.Command{
@@ -71,14 +73,25 @@ var serviceStatusCmd = &cobra.Command{
 	RunE:         runServiceStatus,
 }
 
+var serviceLogsCmd = &cobra.Command{
+	Use:          "logs",
+	Short:        "View service logs via journalctl",
+	SilenceUsage: true,
+	RunE:         runServiceLogs,
+}
+
 func init() {
 	serviceInstallCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
 	serviceUninstallCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
 	serviceStatusCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
+	serviceLogsCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
+	serviceLogsCmd.Flags().BoolVarP(&svcLogsFollow, "follow", "f", false, "Follow log output")
+	serviceLogsCmd.Flags().IntVarP(&svcLogsLines, "lines", "n", 50, "Number of lines to show")
 
 	serviceCmd.AddCommand(serviceInstallCmd)
 	serviceCmd.AddCommand(serviceUninstallCmd)
 	serviceCmd.AddCommand(serviceStatusCmd)
+	serviceCmd.AddCommand(serviceLogsCmd)
 	rootCmd.AddCommand(serviceCmd)
 }
 
@@ -130,6 +143,10 @@ func runServiceStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("service not running or not found")
 	}
 	return nil
+}
+
+func runServiceLogs(cmd *cobra.Command, args []string) error {
+	return journalctlLogs(serviceName, svcLogsFollow, svcLogsLines)
 }
 
 func systemctl(args ...string) error {
