@@ -36,8 +36,9 @@ type DynamicConfig struct {
 }
 
 type HTTPConfig struct {
-	Routers  map[string]*Router  `yaml:"routers,omitempty"`
-	Services map[string]*Service `yaml:"services,omitempty"`
+	Routers     map[string]*Router           `yaml:"routers,omitempty"`
+	Services    map[string]*Service          `yaml:"services,omitempty"`
+	Middlewares map[string]*MiddlewareConfig `yaml:"middlewares,omitempty"`
 }
 
 type TCPConfig struct {
@@ -49,6 +50,7 @@ type Router struct {
 	Rule        string   `yaml:"rule"`
 	EntryPoints []string `yaml:"entryPoints"`
 	Service     string   `yaml:"service"`
+	Middlewares []string `yaml:"middlewares,omitempty"`
 	Priority    int      `yaml:"priority,omitempty"`
 }
 
@@ -85,6 +87,38 @@ type TCPLoadBalancer struct {
 
 type ServerAddress struct {
 	Address string `yaml:"address"`
+}
+
+// MiddlewareConfig mirrors Traefik v3 dynamic config middleware structure.
+type MiddlewareConfig struct {
+	RedirectScheme *RedirectScheme `yaml:"redirectScheme,omitempty"`
+	BasicAuth      *BasicAuth      `yaml:"basicAuth,omitempty"`
+	RateLimit      *RateLimit      `yaml:"rateLimit,omitempty"`
+	StripPrefix    *StripPrefix    `yaml:"stripPrefix,omitempty"`
+	Headers        *Headers        `yaml:"headers,omitempty"`
+}
+
+type RedirectScheme struct {
+	Scheme    string `yaml:"scheme"`
+	Permanent bool   `yaml:"permanent,omitempty"`
+}
+
+type BasicAuth struct {
+	Users []string `yaml:"users"`
+}
+
+type RateLimit struct {
+	Average int `yaml:"average"`
+	Burst   int `yaml:"burst"`
+}
+
+type StripPrefix struct {
+	Prefixes []string `yaml:"prefixes"`
+}
+
+type Headers struct {
+	CustomRequestHeaders  map[string]string `yaml:"customRequestHeaders,omitempty"`
+	CustomResponseHeaders map[string]string `yaml:"customResponseHeaders,omitempty"`
 }
 
 // listDynamicFiles returns YAML files in the dynamic config directory.

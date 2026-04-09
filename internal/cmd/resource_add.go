@@ -11,12 +11,13 @@ import (
 )
 
 var (
-	addDomain     string
-	addAddress    string
-	addName       string
-	addEntrypoint string
-	addType       string
-	addFile       string
+	addDomain      string
+	addAddress     string
+	addName        string
+	addEntrypoint  string
+	addType        string
+	addFile        string
+	addMiddlewares []string
 )
 
 var resourceAddCmd = &cobra.Command{
@@ -41,6 +42,7 @@ func init() {
 	resourceAddCmd.Flags().StringVar(&addEntrypoint, "entrypoint", "web", "Entrypoint name (default: web)")
 	resourceAddCmd.Flags().StringVar(&addType, "type", "http", "Type: http or tcp")
 	resourceAddCmd.Flags().StringVar(&addFile, "file", "", "Dynamic config file (skip selection prompt)")
+	resourceAddCmd.Flags().StringArrayVar(&addMiddlewares, "middleware", nil, "Attach middleware(s) by name (repeatable)")
 
 	_ = resourceAddCmd.MarkFlagRequired("address")
 	_ = resourceAddCmd.MarkFlagRequired("name")
@@ -116,6 +118,7 @@ func addHTTPResource(cfg *DynamicConfig, filePath string) error {
 		Rule:        rule,
 		EntryPoints: []string{addEntrypoint},
 		Service:     svcName,
+		Middlewares: addMiddlewares,
 	}
 
 	// Create service
