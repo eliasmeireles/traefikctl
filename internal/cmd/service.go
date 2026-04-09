@@ -85,7 +85,7 @@ func init() {
 	serviceUninstallCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
 	serviceStatusCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
 	serviceLogsCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
-	serviceLogsCmd.Flags().BoolVarP(&svcLogsFollow, "follow", "f", false, "Follow log output")
+	serviceLogsCmd.Flags().BoolVarP(&svcLogsFollow, "follow", "f", true, "Follow log output")
 	serviceLogsCmd.Flags().IntVarP(&svcLogsLines, "lines", "n", 50, "Number of lines to show")
 
 	serviceCmd.AddCommand(serviceInstallCmd)

@@ -43,7 +43,7 @@ Examples:
 }
 
 func init() {
-	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", false, "Follow log output")
+	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", true, "Follow log output")
 	logsCmd.Flags().IntVarP(&logsLines, "lines", "n", 50, "Number of lines to show")
 	logsCmd.Flags().BoolVar(&logsAccess, "access", false, "Show access log instead of application log")
 	logsCmd.Flags().BoolVar(&logsService, "service", false, "Read from systemd journal")
