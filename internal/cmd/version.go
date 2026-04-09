@@ -28,6 +28,7 @@ func init() {
 func runVersion(cmd *cobra.Command, args []string) {
 	fmt.Printf("traefikctl:\n")
 	fmt.Printf("  Version:   %s\n", Version)
+	fmt.Printf("  Go version: %s\n", runtime.Version())
 	fmt.Printf("  Built:     %s\n", BuildDate)
 	fmt.Printf("  OS/Arch:   %s/%s\n", runtime.GOOS, runtime.GOARCH)
 
