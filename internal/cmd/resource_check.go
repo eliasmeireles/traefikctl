@@ -143,7 +143,7 @@ func pingHTTP(rawURL string, timeout time.Duration) error {
 
 		return fmt.Errorf("%s", msg)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return nil
 }
@@ -153,7 +153,7 @@ func dialTCP(address string, timeout time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("TCP dial failed: %w", err)
 	}
-	conn.Close()
+	_ = conn.Close()
 
 	return nil
 }
