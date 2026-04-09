@@ -13,7 +13,13 @@ var (
 		Long: `traefikctl is a CLI tool for managing Traefik proxy configurations.
 It provides installation, configuration management, and dynamic routing
 with automatic hot-reload support.`,
-		Version: Version,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if v, _ := cmd.Flags().GetBool("version"); v {
+				runVersion(cmd, args)
+				return nil
+			}
+			return cmd.Help()
+		},
 	}
 )
 

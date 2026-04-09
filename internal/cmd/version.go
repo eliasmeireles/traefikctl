@@ -17,6 +17,7 @@ var versionCmd = &cobra.Command{
 }
 
 func init() {
+	rootCmd.Flags().BoolP("version", "v", false, "Show traefikctl and Traefik versions")
 	rootCmd.AddCommand(versionCmd)
 }
 
