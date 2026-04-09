@@ -5,7 +5,8 @@ BUILD_DIR=build
 GO=go
 GOFLAGS=-v
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS=-ldflags "-s -w -X github.com/eliasmeireles/traefikctl/internal/cmd.Version=$(VERSION)"
+BUILD_DATE=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS=-ldflags "-s -w -X github.com/eliasmeireles/traefikctl/internal/cmd.Version=$(VERSION) -X github.com/eliasmeireles/traefikctl/internal/cmd.BuildDate=$(BUILD_DATE)"
 
 help:
 	@echo "Available targets:"
