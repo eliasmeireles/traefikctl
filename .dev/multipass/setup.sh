@@ -134,6 +134,9 @@ setup_traefik_config() {
     multipass exec "$VM_NAME" -- sudo rm -rf /etc/traefik/dynamic
     multipass exec "$VM_NAME" -- sudo ln -sf /home/ubuntu/traefikctl/dynamic /etc/traefik/dynamic
 
+    # Allow non-ubuntu users (e.g. traefik service user) to traverse /home/ubuntu
+    multipass exec "$VM_NAME" -- sudo chmod o+x /home/ubuntu
+
     echo "[OK] Configuration linked from volume"
 }
 
