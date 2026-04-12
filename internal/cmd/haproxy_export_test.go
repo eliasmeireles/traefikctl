@@ -63,3 +63,34 @@ func TestReadHAProxyInput(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestExtractPort(t *testing.T) {
+	t.Run("given *:80 then returns 80", func(t *testing.T) {
+		p, err := extractPort("*:80")
+		require.NoError(t, err)
+		require.Equal(t, "80", p)
+	})
+
+	t.Run("given 10.99.0.168:3306 then returns 3306", func(t *testing.T) {
+		p, err := extractPort("10.99.0.168:3306")
+		require.NoError(t, err)
+		require.Equal(t, "3306", p)
+	})
+
+	t.Run("given bind without colon then returns error", func(t *testing.T) {
+		_, err := extractPort("noport")
+		require.Error(t, err)
+	})
+}
+
+func TestCheckPortConflict(t *testing.T) {
+	t.Run("when port not in used set then returns false", func(t *testing.T) {
+		used := map[string]struct{}{"80": {}}
+		require.False(t, checkPortConflict("443", used))
+	})
+
+	t.Run("when port already in used set then returns true", func(t *testing.T) {
+		used := map[string]struct{}{"80": {}}
+		require.True(t, checkPortConflict("80", used))
+	})
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/eliasmeireles/traefikctl/internal/logger"
 	"github.com/spf13/cobra"
@@ -28,6 +29,21 @@ func readHAProxyInput(filePath, b64 string) (string, error) {
 		return string(data), nil
 	}
 	return "", fmt.Errorf("provide either --file or --base64")
+}
+
+// extractPort parses the port from an HAProxy bind address (e.g. "*:80", "10.0.0.1:443").
+func extractPort(bind string) (string, error) {
+	idx := strings.LastIndex(bind, ":")
+	if idx < 0 {
+		return "", fmt.Errorf("cannot determine port from bind address %q", bind)
+	}
+	return bind[idx+1:], nil
+}
+
+// checkPortConflict reports whether the given port is already registered.
+func checkPortConflict(port string, used map[string]struct{}) bool {
+	_, exists := used[port]
+	return exists
 }
 
 var (
