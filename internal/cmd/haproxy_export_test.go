@@ -206,3 +206,81 @@ func TestConvertTCPListen(t *testing.T) {
 		require.True(t, router.TLS.Passthrough)
 	})
 }
+
+const fullHAProxyConfig = `
+frontend hapctl-traefik-http
+    bind *:80
+    mode http
+    acl host_fileserver hdr(host) -i fileserver.solutionstk.com
+    use_backend hapctl-traefik-http-fileserver-backend if host_fileserver
+    default_backend hapctl-traefik-http-default-backend
+
+backend hapctl-traefik-http-fileserver-backend
+    mode http
+    balance roundrobin
+    server hapctl-fileserver 10.99.0.142:80 check
+
+backend hapctl-traefik-http-default-backend
+    mode http
+    balance roundrobin
+    server hapctl-traefik-http 127.0.0.1:32080 check
+
+listen hapctl-game-server
+    bind *:7777
+    mode tcp
+    balance roundrobin
+    server hapctl-game-server 127.0.0.1:30777 check
+`
+
+func TestExportHAProxyToDir(t *testing.T) {
+	t.Run("must create one yaml file per frontend", func(t *testing.T) {
+		dir := t.TempDir()
+		warnings, err := exportHAProxyToDir(fullHAProxyConfig, dir)
+		require.NoError(t, err)
+		require.Empty(t, warnings)
+		_, err = os.Stat(filepath.Join(dir, "hapctl-traefik-http.yaml"))
+		require.NoError(t, err)
+	})
+
+	t.Run("must create one yaml file per listen block", func(t *testing.T) {
+		dir := t.TempDir()
+		_, err := exportHAProxyToDir(fullHAProxyConfig, dir)
+		require.NoError(t, err)
+		_, err = os.Stat(filepath.Join(dir, "hapctl-game-server.yaml"))
+		require.NoError(t, err)
+	})
+
+	t.Run("when same port used twice then second block is skipped with warning", func(t *testing.T) {
+		conflictCfg := `
+frontend first-http
+    bind *:80
+    mode http
+    default_backend first-backend
+
+backend first-backend
+    mode http
+    balance roundrobin
+    server srv 127.0.0.1:8001 check
+
+frontend second-http
+    bind *:80
+    mode http
+    default_backend second-backend
+
+backend second-backend
+    mode http
+    balance roundrobin
+    server srv 127.0.0.1:8002 check
+`
+		dir := t.TempDir()
+		warnings, err := exportHAProxyToDir(conflictCfg, dir)
+		require.NoError(t, err)
+		require.Len(t, warnings, 1)
+		require.Contains(t, warnings[0], "80")
+
+		_, err = os.Stat(filepath.Join(dir, "first-http.yaml"))
+		require.NoError(t, err)
+		_, statErr := os.Stat(filepath.Join(dir, "second-http.yaml"))
+		require.True(t, os.IsNotExist(statErr))
+	})
+}
