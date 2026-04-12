@@ -199,8 +199,23 @@ func TestConvertTCPListen(t *testing.T) {
 		require.Equal(t, "127.0.0.1:30777", svc.LoadBalancer.Servers[0].Address)
 	})
 
-	t.Run("must include TLS passthrough", func(t *testing.T) {
+	t.Run("must NOT include TLS passthrough for non-443 TCP", func(t *testing.T) {
 		cfg := convertTCPListen(ls, "hapctl-game-server")
+		router := cfg.TCP.Routers["hapctl-game-server"]
+		require.Nil(t, router.TLS)
+	})
+
+	t.Run("must include TLS passthrough for port 443 (websecure entrypoint)", func(t *testing.T) {
+		tlsListen := HAProxyListen{
+			Name:    "hapctl-game-server",
+			Binds:   []string{"*:443"},
+			Mode:    "tcp",
+			Balance: "roundrobin",
+			Servers: []HAProxyServer{
+				{Name: "hapctl-game-server", Address: "127.0.0.1:30443", Options: "check"},
+			},
+		}
+		cfg := convertTCPListen(tlsListen, "websecure")
 		router := cfg.TCP.Routers["hapctl-game-server"]
 		require.NotNil(t, router.TLS)
 		require.True(t, router.TLS.Passthrough)
@@ -282,6 +297,66 @@ backend second-backend
 		require.NoError(t, err)
 		_, statErr := os.Stat(filepath.Join(dir, "second-http.yaml"))
 		require.True(t, os.IsNotExist(statErr))
+	})
+
+	t.Run("when listen block has mode http then creates HTTP yaml", func(t *testing.T) {
+		httpListenCfg := `
+listen hapctl-vpn-http
+    bind 10.99.0.168:80
+    mode http
+    balance roundrobin
+    server hapctl-vault 127.0.0.1:31201 check
+`
+		dir := t.TempDir()
+		_, err := exportHAProxyToDir(httpListenCfg, dir)
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(filepath.Join(dir, "hapctl-vpn-http.yaml"))
+		require.NoError(t, err)
+		content := string(data)
+		require.Contains(t, content, "http:")
+		require.NotContains(t, content, "tcp:")
+	})
+}
+
+func TestResolveBindPort(t *testing.T) {
+	t.Run("when no binds then returns skipped with warning", func(t *testing.T) {
+		used := map[string]struct{}{}
+		var warnings []string
+		port, skipped := resolveBindPort(nil, "test-block", used, &warnings)
+		require.True(t, skipped)
+		require.Empty(t, port)
+		require.Len(t, warnings, 1)
+		require.Contains(t, warnings[0], "test-block")
+	})
+
+	t.Run("when bind has no port then returns skipped with warning", func(t *testing.T) {
+		used := map[string]struct{}{}
+		var warnings []string
+		port, skipped := resolveBindPort([]string{"nocolon"}, "test-block", used, &warnings)
+		require.True(t, skipped)
+		require.Empty(t, port)
+		require.Len(t, warnings, 1)
+	})
+
+	t.Run("when port already used then returns skipped with warning containing port", func(t *testing.T) {
+		used := map[string]struct{}{"80": {}}
+		var warnings []string
+		port, skipped := resolveBindPort([]string{"*:80"}, "second-http", used, &warnings)
+		require.True(t, skipped)
+		require.Empty(t, port)
+		require.Len(t, warnings, 1)
+		require.Contains(t, warnings[0], "80")
+		require.Contains(t, warnings[0], "second-http")
+	})
+
+	t.Run("when port is available then returns port and not skipped", func(t *testing.T) {
+		used := map[string]struct{}{}
+		var warnings []string
+		port, skipped := resolveBindPort([]string{"*:8080"}, "my-service", used, &warnings)
+		require.False(t, skipped)
+		require.Equal(t, "8080", port)
+		require.Empty(t, warnings)
 	})
 }
 

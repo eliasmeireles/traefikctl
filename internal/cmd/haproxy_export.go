@@ -128,12 +128,16 @@ func convertTCPListen(ls HAProxyListen, entrypoint string) *DynamicConfig {
 		},
 	}
 
-	cfg.TCP.Routers[ls.Name] = &TCPRouter{
+	router := &TCPRouter{
 		Rule:        "HostSNI(`*`)",
 		EntryPoints: []string{entrypoint},
 		Service:     ls.Name,
-		TLS:         &TLSConf{Passthrough: true},
 	}
+	// Only add TLS passthrough for port 443 (HTTPS passthrough scenario)
+	if entrypoint == "websecure" {
+		router.TLS = &TLSConf{Passthrough: true}
+	}
+	cfg.TCP.Routers[ls.Name] = router
 
 	var servers []ServerAddress
 	for _, srv := range ls.Servers {
@@ -188,7 +192,25 @@ func exportHAProxyToDir(text, outDir string) ([]string, error) {
 		usedPorts[port] = struct{}{}
 
 		entrypoint := entrypointNameForPort(port, ls.Name)
-		dynCfg := convertTCPListen(ls, entrypoint)
+
+		var dynCfg *DynamicConfig
+		if ls.Mode == "http" {
+			fe := HAProxyFrontend{
+				Name:           ls.Name,
+				Binds:          ls.Binds,
+				Mode:           ls.Mode,
+				DefaultBackend: ls.Name + "-backend",
+			}
+			be := HAProxyBackend{
+				Name:    ls.Name + "-backend",
+				Mode:    "http",
+				Balance: ls.Balance,
+				Servers: ls.Servers,
+			}
+			dynCfg = convertHTTPFrontend(fe, map[string]HAProxyBackend{be.Name: be}, entrypoint)
+		} else {
+			dynCfg = convertTCPListen(ls, entrypoint)
+		}
 
 		outPath := filepath.Join(outDir, ls.Name+".yaml")
 		if err := saveDynamicConfig(outPath, dynCfg); err != nil {
