@@ -129,20 +129,22 @@ trap cleanup_dynamic_config EXIT
 rm -f "$DYN_DIR"/*.yaml 2>/dev/null || true
 cp "$OUT_DIR/hapctl-test-http.yaml" "$DYN_DIR/"
 
-# Wait for Traefik to reload the new config (up to 15 seconds)
+# Wait for Traefik to process new config by polling actual routing
+# (up to 30 seconds — file watcher reload can take time)
 RELOAD_OK=false
-for attempt in {1..5}; do
+for attempt in {1..10}; do
     sleep 3
-    if systemctl is-active traefikctl > /dev/null 2>&1; then
+    STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: app2.localhost" "http://127.0.0.1" 2>/dev/null || echo "000")
+    if [ "$STATUS" = "200" ]; then
         RELOAD_OK=true
         break
     fi
 done
 
 if $RELOAD_OK; then
-    pass "Traefik service is still active after config deploy"
+    pass "Traefik reloaded new config and routing is working"
 else
-    fail "Traefik service is not active after config deploy"
+    fail "Traefik did not reload new config within 30 seconds"
 fi
 
 assert_http_status "http://127.0.0.1" "Host: app1.localhost" "200" "app1.localhost routes to app1"

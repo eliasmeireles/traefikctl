@@ -143,7 +143,7 @@ func TestConvertHTTPFrontend(t *testing.T) {
 
 	t.Run("must create default_backend router with PathPrefix rule and lower priority", func(t *testing.T) {
 		cfg := convertHTTPFrontend(fe, backends, "web")
-		router, ok := cfg.HTTP.Routers["hapctl-traefik-http-default-backend"]
+		router, ok := cfg.HTTP.Routers["hapctl-traefik-http-default"]
 		require.True(t, ok)
 		require.Equal(t, "PathPrefix(`/`)", router.Rule)
 		require.Equal(t, 1, router.Priority)
@@ -155,6 +155,33 @@ func TestConvertHTTPFrontend(t *testing.T) {
 		require.True(t, ok)
 		require.Len(t, svc.LoadBalancer.Servers, 1)
 		require.Equal(t, "http://127.0.0.1:32080", svc.LoadBalancer.Servers[0].URL)
+	})
+}
+
+func TestConvertHTTPFrontendNoRouterKeyCollision(t *testing.T) {
+	t.Run("when same backend used in use_backend and default_backend then ACL router is preserved", func(t *testing.T) {
+		sameBeFE := HAProxyFrontend{
+			Name:  "my-frontend",
+			Binds: []string{"*:80"},
+			Mode:  "http",
+			ACLs: []HAProxyACL{
+				{Name: "host_app", Condition: "hdr(host) -i app.example.com"},
+			},
+			UseBackends:    []HAProxyUseBackend{{Backend: "my-backend", ACLName: "host_app"}},
+			DefaultBackend: "my-backend",
+		}
+		be := map[string]HAProxyBackend{
+			"my-backend": {Name: "my-backend", Mode: "http", Servers: []HAProxyServer{{Address: "127.0.0.1:8080"}}},
+		}
+		cfg := convertHTTPFrontend(sameBeFE, be, "web")
+
+		aclRouter, ok := cfg.HTTP.Routers["my-backend"]
+		require.True(t, ok)
+		require.Equal(t, "Host(`app.example.com`)", aclRouter.Rule)
+
+		defaultRouter, ok := cfg.HTTP.Routers["my-frontend-default"]
+		require.True(t, ok)
+		require.Equal(t, "PathPrefix(`/`)", defaultRouter.Rule)
 	})
 }
 

@@ -96,7 +96,8 @@ func convertHTTPFrontend(fe HAProxyFrontend, backends map[string]HAProxyBackend,
 	}
 
 	if fe.DefaultBackend != "" {
-		cfg.HTTP.Routers[fe.DefaultBackend] = &Router{
+		defaultRouterKey := fe.Name + "-default"
+		cfg.HTTP.Routers[defaultRouterKey] = &Router{
 			Rule:        "PathPrefix(`/`)",
 			EntryPoints: []string{entrypoint},
 			Service:     fe.DefaultBackend,
