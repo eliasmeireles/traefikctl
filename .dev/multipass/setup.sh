@@ -96,6 +96,9 @@ prepare_volume() {
     cp "$SCRIPT_DIR/docker-compose.yml" "$VOLUMES_DIR/"
     cp -r "$SCRIPT_DIR/html" "$VOLUMES_DIR/"
     cp "$SCRIPT_DIR/generate-ssl.sh" "$VOLUMES_DIR/"
+    mkdir -p "$VOLUMES_DIR/test-fixtures"
+    cp -r "$SCRIPT_DIR/test-fixtures/"* "$VOLUMES_DIR/test-fixtures/"
+    cp "$SCRIPT_DIR/test-haproxy-export.sh" "$VOLUMES_DIR/" 2>/dev/null || true
 
     echo "[OK] Volume prepared at: $VOLUMES_DIR"
 }

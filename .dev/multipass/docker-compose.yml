@@ -26,3 +26,11 @@ services:
       timeout: 5s
       retries: 3
     restart: unless-stopped
+
+  tcp-echo:
+    image: alpine:latest
+    container_name: tcp-echo
+    command: sh -c "apk add --no-cache socat && socat TCP-LISTEN:7001,fork,reuseaddr EXEC:'/bin/cat'"
+    ports:
+      - "7001:7001"
+    restart: unless-stopped
