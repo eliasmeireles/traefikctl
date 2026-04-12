@@ -10,6 +10,7 @@ import (
 
 	"github.com/eliasmeireles/traefikctl/internal/logger"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // readHAProxyInput returns raw HAProxy config text from either a file path
@@ -321,6 +322,52 @@ func resolveBindPort(binds []string, name string, usedPorts map[string]struct{},
 	return p, false
 }
 
+// applyTCPEntrypoints reads the Traefik static config at staticPath, merges the
+// given TCP entrypoints into the entryPoints section, and writes the file back.
+// Existing entrypoints are preserved; only new names are added.
+func applyTCPEntrypoints(staticPath string, entrypoints map[string]string) error {
+	data, err := os.ReadFile(staticPath)
+	if err != nil {
+		return permissionHint("read static config", staticPath, err)
+	}
+
+	var cfg map[string]interface{}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("cannot parse %s: %w", staticPath, err)
+	}
+	if cfg == nil {
+		cfg = make(map[string]interface{})
+	}
+
+	eps, _ := cfg["entryPoints"].(map[string]interface{})
+	if eps == nil {
+		eps = make(map[string]interface{})
+	}
+
+	added := 0
+	for name, addr := range entrypoints {
+		if _, exists := eps[name]; exists {
+			logger.Info("entrypoint %q already defined in %s — skipping", name, staticPath)
+			continue
+		}
+		eps[name] = map[string]interface{}{"address": addr}
+		added++
+	}
+	cfg["entryPoints"] = eps
+
+	out, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("cannot marshal updated config: %w", err)
+	}
+
+	if err := os.WriteFile(staticPath, out, 0644); err != nil {
+		return permissionHint("write static config", staticPath, err)
+	}
+
+	logger.Info("Added %d TCP entrypoint(s) to %s — restart Traefik to apply", added, staticPath)
+	return nil
+}
+
 // outputFileName derives the YAML output filename from the HAProxy input file path.
 // Falls back to defaultName when the input path is empty (e.g. base64 input).
 func outputFileName(inputFilePath, defaultName string) string {
@@ -332,11 +379,14 @@ func outputFileName(inputFilePath, defaultName string) string {
 	return strings.TrimSuffix(base, ext) + ".yaml"
 }
 
+const defaultStaticConfigPath = "/etc/traefik/traefik.yaml"
+
 var (
-	haproxyExportFile      string
-	haproxyExportBase64    string
-	haproxyExportOutputDir string
-	haproxyExportSplit     bool
+	haproxyExportFile             string
+	haproxyExportBase64           string
+	haproxyExportOutputDir        string
+	haproxyExportSplit            bool
+	haproxyExportApplyEntrypoints bool
 )
 
 var haproxyExportCmd = &cobra.Command{
@@ -364,6 +414,7 @@ func init() {
 	haproxyExportCmd.Flags().StringVar(&haproxyExportBase64, "base64", "", "Base64-encoded HAProxy config")
 	haproxyExportCmd.Flags().StringVar(&haproxyExportOutputDir, "output-dir", defaultDynamicDir, "Output directory for Traefik YAML files")
 	haproxyExportCmd.Flags().BoolVar(&haproxyExportSplit, "split", false, "Write one YAML file per frontend/listen block instead of a single merged file")
+	haproxyExportCmd.Flags().BoolVar(&haproxyExportApplyEntrypoints, "no-apply-entrypoints", false, "Skip automatic update of TCP entrypoints in "+defaultStaticConfigPath)
 	haproxyCmd.AddCommand(haproxyExportCmd)
 }
 
@@ -394,14 +445,28 @@ func runHAProxyExport(cmd *cobra.Command, args []string) error {
 	logger.Info("HAProxy export complete. Files written to %s", outDir)
 
 	if len(result.TCPEntrypoints) > 0 {
-		logger.Info("NOTE: Add the following TCP entrypoints to your traefik.yaml:")
-		fmt.Println()
-		fmt.Println("  entryPoints:")
-		for name, addr := range result.TCPEntrypoints {
-			fmt.Printf("    %s:\n", name)
-			fmt.Printf("      address: \"%s\"\n", addr)
+		if !haproxyExportApplyEntrypoints {
+			if err := applyTCPEntrypoints(defaultStaticConfigPath, result.TCPEntrypoints); err != nil {
+				logger.Warn("Could not update %s: %v", defaultStaticConfigPath, err)
+				logger.Info("NOTE: Add the following TCP entrypoints manually to your traefik.yaml:")
+				fmt.Println()
+				fmt.Println("  entryPoints:")
+				for name, addr := range result.TCPEntrypoints {
+					fmt.Printf("    %s:\n", name)
+					fmt.Printf("      address: \"%s\"\n", addr)
+				}
+				fmt.Println()
+			}
+		} else {
+			logger.Info("NOTE: Add the following TCP entrypoints to your traefik.yaml:")
+			fmt.Println()
+			fmt.Println("  entryPoints:")
+			for name, addr := range result.TCPEntrypoints {
+				fmt.Printf("    %s:\n", name)
+				fmt.Printf("      address: \"%s\"\n", addr)
+			}
+			fmt.Println()
 		}
-		fmt.Println()
 	}
 
 	return nil

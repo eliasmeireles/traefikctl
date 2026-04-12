@@ -499,6 +499,60 @@ func TestResolveBindPort(t *testing.T) {
 	})
 }
 
+func TestApplyTCPEntrypoints(t *testing.T) {
+	const baseConfig = `
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+providers:
+  file:
+    directory: /etc/traefik/dynamic/
+    watch: true
+`
+	t.Run("must add new TCP entrypoints to existing traefik.yaml", func(t *testing.T) {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "traefik.yaml")
+		require.NoError(t, os.WriteFile(p, []byte(baseConfig), 0644))
+
+		eps := map[string]string{
+			"hapctl-rabbitmq": "10.99.0.168:5672",
+			"hapctl-game":     ":7777",
+		}
+		require.NoError(t, applyTCPEntrypoints(p, eps))
+
+		data, err := os.ReadFile(p)
+		require.NoError(t, err)
+		content := string(data)
+		require.Contains(t, content, "hapctl-rabbitmq")
+		require.Contains(t, content, "10.99.0.168:5672")
+		require.Contains(t, content, "hapctl-game")
+		require.Contains(t, content, ":7777")
+		require.Contains(t, content, "web")
+		require.Contains(t, content, "websecure")
+	})
+
+	t.Run("must not overwrite existing entrypoints", func(t *testing.T) {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "traefik.yaml")
+		require.NoError(t, os.WriteFile(p, []byte(baseConfig), 0644))
+
+		eps := map[string]string{"web": ":9999"}
+		require.NoError(t, applyTCPEntrypoints(p, eps))
+
+		data, err := os.ReadFile(p)
+		require.NoError(t, err)
+		require.Contains(t, string(data), ":80")
+		require.NotContains(t, string(data), ":9999")
+	})
+
+	t.Run("must return error when file does not exist", func(t *testing.T) {
+		err := applyTCPEntrypoints("/nonexistent/traefik.yaml", map[string]string{"ep": ":1234"})
+		require.Error(t, err)
+	})
+}
+
 func TestHAProxyExportCommandFlags(t *testing.T) {
 	t.Run("must have --file flag", func(t *testing.T) {
 		require.NotNil(t, haproxyExportCmd.Flags().Lookup("file"))
@@ -511,5 +565,8 @@ func TestHAProxyExportCommandFlags(t *testing.T) {
 	})
 	t.Run("must have --split flag", func(t *testing.T) {
 		require.NotNil(t, haproxyExportCmd.Flags().Lookup("split"))
+	})
+	t.Run("must have --no-apply-entrypoints flag", func(t *testing.T) {
+		require.NotNil(t, haproxyExportCmd.Flags().Lookup("no-apply-entrypoints"))
 	})
 }
