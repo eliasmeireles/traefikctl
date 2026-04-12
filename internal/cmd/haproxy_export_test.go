@@ -284,3 +284,18 @@ backend second-backend
 		require.True(t, os.IsNotExist(statErr))
 	})
 }
+
+func TestHAProxyExportCommandFlags(t *testing.T) {
+	t.Run("must have --file flag", func(t *testing.T) {
+		f := haproxyExportCmd.Flags().Lookup("file")
+		require.NotNil(t, f)
+	})
+	t.Run("must have --base64 flag", func(t *testing.T) {
+		f := haproxyExportCmd.Flags().Lookup("base64")
+		require.NotNil(t, f)
+	})
+	t.Run("must have --output-dir flag", func(t *testing.T) {
+		f := haproxyExportCmd.Flags().Lookup("output-dir")
+		require.NotNil(t, f)
+	})
+}

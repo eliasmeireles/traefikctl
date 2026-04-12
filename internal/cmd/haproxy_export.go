@@ -228,8 +228,19 @@ var (
 )
 
 var haproxyExportCmd = &cobra.Command{
-	Use:          "export",
-	Short:        "Convert an HAProxy config to Traefik dynamic YAML files",
+	Use:   "export",
+	Short: "Convert an HAProxy config to Traefik dynamic YAML files",
+	Long: `Read an HAProxy configuration (from a file or base64-encoded string) and
+generate Traefik dynamic YAML files — one per frontend/listen block.
+
+The global and defaults sections of the HAProxy config are ignored.
+Blocks with ports that conflict with previously processed blocks are skipped
+with a warning.
+
+Examples:
+  traefikctl haproxy export --file /etc/haproxy/haproxy.cfg
+  traefikctl haproxy export --base64 <base64-encoded-config>
+  traefikctl haproxy export --file haproxy.cfg --output-dir /tmp/traefik-dynamic`,
 	SilenceUsage: true,
 	RunE:         runHAProxyExport,
 }
