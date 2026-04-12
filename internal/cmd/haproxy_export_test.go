@@ -169,3 +169,40 @@ func TestEntrypointNameForPort(t *testing.T) {
 		require.Equal(t, "hapctl-vpn-http", entrypointNameForPort("8080", "hapctl-vpn-http"))
 	})
 }
+
+func TestConvertTCPListen(t *testing.T) {
+	ls := HAProxyListen{
+		Name:    "hapctl-game-server",
+		Binds:   []string{"*:7777"},
+		Mode:    "tcp",
+		Balance: "roundrobin",
+		Servers: []HAProxyServer{
+			{Name: "hapctl-game-server", Address: "127.0.0.1:30777", Options: "check"},
+		},
+	}
+
+	t.Run("must create TCP router with HostSNI wildcard rule", func(t *testing.T) {
+		cfg := convertTCPListen(ls, "hapctl-game-server")
+		require.NotNil(t, cfg.TCP)
+		router, ok := cfg.TCP.Routers["hapctl-game-server"]
+		require.True(t, ok)
+		require.Equal(t, "HostSNI(`*`)", router.Rule)
+		require.Equal(t, []string{"hapctl-game-server"}, router.EntryPoints)
+		require.Equal(t, "hapctl-game-server", router.Service)
+	})
+
+	t.Run("must create TCP service with server address", func(t *testing.T) {
+		cfg := convertTCPListen(ls, "hapctl-game-server")
+		svc, ok := cfg.TCP.Services["hapctl-game-server"]
+		require.True(t, ok)
+		require.Len(t, svc.LoadBalancer.Servers, 1)
+		require.Equal(t, "127.0.0.1:30777", svc.LoadBalancer.Servers[0].Address)
+	})
+
+	t.Run("must include TLS passthrough", func(t *testing.T) {
+		cfg := convertTCPListen(ls, "hapctl-game-server")
+		router := cfg.TCP.Routers["hapctl-game-server"]
+		require.NotNil(t, router.TLS)
+		require.True(t, router.TLS.Passthrough)
+	})
+}

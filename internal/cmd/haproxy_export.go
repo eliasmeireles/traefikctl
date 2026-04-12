@@ -118,6 +118,35 @@ func buildHTTPService(be HAProxyBackend) *Service {
 	return &Service{LoadBalancer: &LoadBalancer{Servers: servers}}
 }
 
+// convertTCPListen converts an HAProxy listen block (TCP mode) into a Traefik
+// DynamicConfig with a TCP router and service.
+func convertTCPListen(ls HAProxyListen, entrypoint string) *DynamicConfig {
+	cfg := &DynamicConfig{
+		TCP: &TCPConfig{
+			Routers:  make(map[string]*TCPRouter),
+			Services: make(map[string]*TCPService),
+		},
+	}
+
+	cfg.TCP.Routers[ls.Name] = &TCPRouter{
+		Rule:        "HostSNI(`*`)",
+		EntryPoints: []string{entrypoint},
+		Service:     ls.Name,
+		TLS:         &TLSConf{Passthrough: true},
+	}
+
+	var servers []ServerAddress
+	for _, srv := range ls.Servers {
+		servers = append(servers, ServerAddress{Address: srv.Address})
+	}
+
+	cfg.TCP.Services[ls.Name] = &TCPService{
+		LoadBalancer: &TCPLoadBalancer{Servers: servers},
+	}
+
+	return cfg
+}
+
 var (
 	haproxyExportFile      string
 	haproxyExportBase64    string
