@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/eliasmeireles/traefikctl/internal/logger"
@@ -44,6 +45,77 @@ func extractPort(bind string) (string, error) {
 func checkPortConflict(port string, used map[string]struct{}) bool {
 	_, exists := used[port]
 	return exists
+}
+
+var aclHostRe = regexp.MustCompile(`(?i)hdr\(host\)\s+-i\s+(\S+)`)
+
+// entrypointNameForPort maps common ports to Traefik standard entrypoint names.
+func entrypointNameForPort(port, frontendName string) string {
+	switch port {
+	case "80":
+		return "web"
+	case "443":
+		return "websecure"
+	default:
+		return frontendName
+	}
+}
+
+// convertHTTPFrontend converts an HAProxy HTTP frontend (and its referenced backends)
+// into a Traefik DynamicConfig with HTTP routers and services.
+func convertHTTPFrontend(fe HAProxyFrontend, backends map[string]HAProxyBackend, entrypoint string) *DynamicConfig {
+	cfg := &DynamicConfig{
+		HTTP: &HTTPConfig{
+			Routers:  make(map[string]*Router),
+			Services: make(map[string]*Service),
+		},
+	}
+
+	aclHost := make(map[string]string)
+	for _, acl := range fe.ACLs {
+		m := aclHostRe.FindStringSubmatch(acl.Condition)
+		if len(m) > 1 {
+			aclHost[acl.Name] = m[1]
+		}
+	}
+
+	for _, ub := range fe.UseBackends {
+		host, ok := aclHost[ub.ACLName]
+		if !ok {
+			continue
+		}
+		cfg.HTTP.Routers[ub.Backend] = &Router{
+			Rule:        fmt.Sprintf("Host(`%s`)", host),
+			EntryPoints: []string{entrypoint},
+			Service:     ub.Backend,
+			Priority:    10,
+		}
+		if be, found := backends[ub.Backend]; found {
+			cfg.HTTP.Services[ub.Backend] = buildHTTPService(be)
+		}
+	}
+
+	if fe.DefaultBackend != "" {
+		cfg.HTTP.Routers[fe.DefaultBackend] = &Router{
+			Rule:        "PathPrefix(`/`)",
+			EntryPoints: []string{entrypoint},
+			Service:     fe.DefaultBackend,
+			Priority:    1,
+		}
+		if be, found := backends[fe.DefaultBackend]; found {
+			cfg.HTTP.Services[fe.DefaultBackend] = buildHTTPService(be)
+		}
+	}
+
+	return cfg
+}
+
+func buildHTTPService(be HAProxyBackend) *Service {
+	var servers []ServerURL
+	for _, srv := range be.Servers {
+		servers = append(servers, ServerURL{URL: "http://" + srv.Address})
+	}
+	return &Service{LoadBalancer: &LoadBalancer{Servers: servers}}
 }
 
 var (
