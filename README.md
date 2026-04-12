@@ -251,19 +251,22 @@ sudo traefikctl middleware remove --name api-limit
 Convert an existing HAProxy configuration into Traefik dynamic YAML files. Each `frontend` and `listen` block produces one file, ready to drop into `/etc/traefik/dynamic/`.
 
 ```bash
-# From a file
-traefikctl haproxy export --file /etc/haproxy/haproxy.cfg --output-dir /etc/traefik/dynamic
+# From a file — writes directly to /etc/traefik/dynamic (default)
+sudo traefikctl haproxy export --file /etc/haproxy/haproxy.cfg
+
+# Custom output directory
+traefikctl haproxy export --file /etc/haproxy/haproxy.cfg --output-dir /tmp/traefik-preview
 
 # From a base64-encoded config (useful in pipelines)
 B64=$(base64 -w0 /etc/haproxy/haproxy.cfg)
-traefikctl haproxy export --base64 "$B64" --output-dir /etc/traefik/dynamic
+sudo traefikctl haproxy export --base64 "$B64"
 ```
 
-| Flag | Description |
-|---|---|
-| `--file` | Path to the HAProxy config file |
-| `--base64` | Base64-encoded HAProxy config (alternative to `--file`) |
-| `--output-dir` | Directory where the generated YAML files are written |
+| Flag | Default | Description |
+|---|---|---|
+| `--file` | — | Path to the HAProxy config file |
+| `--base64` | — | Base64-encoded HAProxy config (alternative to `--file`) |
+| `--output-dir` | `/etc/traefik/dynamic` | Directory where the generated YAML files are written |
 
 **Conversion rules:**
 
