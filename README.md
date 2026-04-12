@@ -17,6 +17,7 @@ Traefik Control — A CLI tool for managing Traefik proxy configurations.
 - **HTTPS / Let's Encrypt**: One-command TLS and ACME configuration
 - **Status Dashboard**: Service state, Traefik version, and route count at a glance
 - **Self-Update**: Download and install the latest traefikctl release
+- **HAProxy Export**: Convert HAProxy `frontend`/`backend`/`listen` blocks to Traefik dynamic YAML files
 
 ## Installation
 
@@ -242,6 +243,38 @@ traefikctl middleware list
 ```bash
 sudo traefikctl middleware remove --name api-limit
 ```
+
+---
+
+### haproxy export
+
+Convert an existing HAProxy configuration into Traefik dynamic YAML files. Each `frontend` and `listen` block produces one file, ready to drop into `/etc/traefik/dynamic/`.
+
+```bash
+# From a file
+traefikctl haproxy export --file /etc/haproxy/haproxy.cfg --output-dir /etc/traefik/dynamic
+
+# From a base64-encoded config (useful in pipelines)
+B64=$(base64 -w0 /etc/haproxy/haproxy.cfg)
+traefikctl haproxy export --base64 "$B64" --output-dir /etc/traefik/dynamic
+```
+
+| Flag | Description |
+|---|---|
+| `--file` | Path to the HAProxy config file |
+| `--base64` | Base64-encoded HAProxy config (alternative to `--file`) |
+| `--output-dir` | Directory where the generated YAML files are written |
+
+**Conversion rules:**
+
+- `frontend` (HTTP mode) → Traefik HTTP routers + services
+  - ACL `hdr(host) -i domain` → `Host(\`domain\`)` rule (priority 10)
+  - `default_backend` → `PathPrefix(\`/\`)` catch-all rule (priority 1)
+- `listen` (TCP mode) → Traefik TCP router + service with `HostSNI(\`*\`)`
+  - Port 443 gets TLS passthrough; all other TCP ports do not
+- `listen` (HTTP mode) → same as `frontend`
+- Duplicate port across blocks → warning printed, second block skipped
+- Entrypoints: port `80` → `web`, port `443` → `websecure`, others → frontend name
 
 ---
 
