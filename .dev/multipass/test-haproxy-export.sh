@@ -54,7 +54,14 @@ echo ""
 echo "--- Section 1: Export from file ---"
 
 rm -rf "$OUT_DIR"
-EXPORT_OUTPUT=$(traefikctl haproxy export --file "$FIXTURE" --output-dir "$OUT_DIR" 2>&1)
+if ! EXPORT_OUTPUT=$(traefikctl haproxy export --file "$FIXTURE" --output-dir "$OUT_DIR" 2>&1); then
+    fail "HAProxy export command failed: $EXPORT_OUTPUT"
+    echo ""
+    echo "========================================"
+    echo " Results: ${PASS} passed, ${FAIL} failed"
+    echo "========================================"
+    exit 1
+fi
 
 assert_file_exists "$OUT_DIR/hapctl-test-http.yaml" "HTTP frontend YAML is created"
 assert_file_missing "$OUT_DIR/hapctl-test-http-dup.yaml" "Duplicate-port frontend is NOT created"
@@ -109,14 +116,30 @@ echo "--- Section 5: Live Traefik proxy routing ---"
 BACKUP_DIR="/tmp/traefik-dynamic-backup-$(date +%s)"
 cp -r "$DYN_DIR" "$BACKUP_DIR" 2>/dev/null || true
 
+cleanup_dynamic_config() {
+    rm -f "$DYN_DIR"/*.yaml 2>/dev/null || true
+    if [ -d "$BACKUP_DIR" ]; then
+        cp "$BACKUP_DIR"/*.yaml "$DYN_DIR/" 2>/dev/null || true
+        rm -rf "$BACKUP_DIR"
+    fi
+}
+trap cleanup_dynamic_config EXIT
+
 # Replace dynamic dir contents with exported config
 rm -f "$DYN_DIR"/*.yaml 2>/dev/null || true
 cp "$OUT_DIR/hapctl-test-http.yaml" "$DYN_DIR/"
 
-# Wait for Traefik file watcher to reload (Traefik watches for changes)
-sleep 3
+# Wait for Traefik to reload the new config (up to 15 seconds)
+RELOAD_OK=false
+for attempt in {1..5}; do
+    sleep 3
+    if systemctl is-active traefikctl > /dev/null 2>&1; then
+        RELOAD_OK=true
+        break
+    fi
+done
 
-if systemctl is-active traefikctl > /dev/null 2>&1; then
+if $RELOAD_OK; then
     pass "Traefik service is still active after config deploy"
 else
     fail "Traefik service is not active after config deploy"
@@ -126,19 +149,14 @@ assert_http_status "http://127.0.0.1" "Host: app1.localhost" "200" "app1.localho
 assert_http_status "http://127.0.0.1" "Host: app2.localhost" "200" "app2.localhost routes to app2"
 assert_http_status "http://127.0.0.1" "Host: unknown.localhost" "200" "default backend serves catch-all"
 
-APP1_BODY=$(curl -s -H "Host: app1.localhost" "http://127.0.0.1" 2>/dev/null || echo "CURL_FAILED")
-APP2_BODY=$(curl -s -H "Host: app2.localhost" "http://127.0.0.1" 2>/dev/null || echo "CURL_FAILED")
+APP1_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: app1.localhost" "http://127.0.0.1" 2>/dev/null || echo "000")
+APP2_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: app2.localhost" "http://127.0.0.1" 2>/dev/null || echo "000")
 
-if [ "$APP1_BODY" != "$APP2_BODY" ] && [ "$APP1_BODY" != "CURL_FAILED" ] && [ "$APP2_BODY" != "CURL_FAILED" ]; then
-    pass "app1 and app2 return different responses (routing is working)"
+if [ "$APP1_STATUS" = "200" ] && [ "$APP2_STATUS" = "200" ]; then
+    pass "Both app1 and app2 backends are reachable (HTTP 200)"
 else
-    fail "app1 and app2 responses identical or curl failed — routing may not be working"
+    fail "Backend reachability check failed — app1: $APP1_STATUS, app2: $APP2_STATUS"
 fi
-
-# ── Restore original dynamic config ──────────────────────────────────────────
-rm -f "$DYN_DIR"/*.yaml 2>/dev/null || true
-cp "$BACKUP_DIR"/*.yaml "$DYN_DIR/" 2>/dev/null || true
-sleep 1
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""

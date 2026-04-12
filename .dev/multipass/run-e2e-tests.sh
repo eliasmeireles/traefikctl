@@ -27,6 +27,11 @@ echo "[2/5] Installing binary in VM..."
 multipass transfer "$PROJECT_ROOT/build/traefikctl" "$VM_NAME:/tmp/traefikctl"
 multipass exec "$VM_NAME" -- sudo mv /tmp/traefikctl /usr/local/bin/traefikctl
 multipass exec "$VM_NAME" -- sudo chmod +x /usr/local/bin/traefikctl
+if ! multipass exec "$VM_NAME" -- traefikctl --version > /dev/null 2>&1; then
+    echo "[ERROR] Binary is not compatible with VM or failed to run"
+    exit 1
+fi
+echo "[OK] Binary verified"
 echo "[OK] Binary installed"
 
 echo "[3/5] Syncing test fixtures..."
