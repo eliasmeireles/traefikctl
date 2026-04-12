@@ -41,6 +41,15 @@ func extractPort(bind string) (string, error) {
 	return bind[idx+1:], nil
 }
 
+// bindToEntrypointAddress normalises an HAProxy bind address to a Traefik
+// entrypoint address string. "*:80" → ":80", "10.0.0.1:5672" → "10.0.0.1:5672".
+func bindToEntrypointAddress(bind string) string {
+	if strings.HasPrefix(bind, "*:") {
+		return ":" + bind[2:]
+	}
+	return bind
+}
+
 // checkPortConflict reports whether the given port is already registered.
 func checkPortConflict(port string, used map[string]struct{}) bool {
 	_, exists := used[port]
@@ -152,13 +161,62 @@ func convertTCPListen(ls HAProxyListen, entrypoint string) *DynamicConfig {
 	return cfg
 }
 
-// exportHAProxyToDir parses the given HAProxy config text and writes one Traefik
-// dynamic YAML file per frontend/listen block into outDir.
-// Returns a list of warning messages for skipped blocks (port conflicts).
-func exportHAProxyToDir(text, outDir string) ([]string, error) {
+// mergeDynamicConfigs combines multiple DynamicConfig instances into one,
+// merging all HTTP and TCP routers/services into shared maps.
+func mergeDynamicConfigs(configs []*DynamicConfig) *DynamicConfig {
+	merged := &DynamicConfig{}
+	for _, c := range configs {
+		if c.HTTP != nil {
+			if merged.HTTP == nil {
+				merged.HTTP = &HTTPConfig{
+					Routers:  make(map[string]*Router),
+					Services: make(map[string]*Service),
+				}
+			}
+			for k, v := range c.HTTP.Routers {
+				merged.HTTP.Routers[k] = v
+			}
+			for k, v := range c.HTTP.Services {
+				merged.HTTP.Services[k] = v
+			}
+		}
+		if c.TCP != nil {
+			if merged.TCP == nil {
+				merged.TCP = &TCPConfig{
+					Routers:  make(map[string]*TCPRouter),
+					Services: make(map[string]*TCPService),
+				}
+			}
+			for k, v := range c.TCP.Routers {
+				merged.TCP.Routers[k] = v
+			}
+			for k, v := range c.TCP.Services {
+				merged.TCP.Services[k] = v
+			}
+		}
+	}
+	return merged
+}
+
+// ExportResult holds the outcome of an HAProxy export operation.
+type ExportResult struct {
+	// Warnings contains messages for skipped blocks (port conflicts, parse errors).
+	Warnings []string
+	// TCPEntrypoints maps entrypoint name to its Traefik address string
+	// for every TCP service that requires a custom entrypoint (port ≠ 80/443).
+	TCPEntrypoints map[string]string
+}
+
+// exportHAProxyToDir parses the given HAProxy config text and writes Traefik
+// dynamic YAML files into outDir.
+// When split is false (default), all blocks are merged into a single file named outFile.
+// When split is true, one file is written per frontend/listen block.
+func exportHAProxyToDir(text, outDir, outFile string, split bool) (ExportResult, error) {
+	result := ExportResult{TCPEntrypoints: make(map[string]string)}
+
 	haCfg, err := ParseHAProxyConfig(text)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 
 	backendMap := make(map[string]HAProxyBackend, len(haCfg.Backends))
@@ -167,10 +225,10 @@ func exportHAProxyToDir(text, outDir string) ([]string, error) {
 	}
 
 	usedPorts := make(map[string]struct{})
-	var warnings []string
+	var configs []*DynamicConfig
 
 	for _, fe := range haCfg.Frontends {
-		port, skipped := resolveBindPort(fe.Binds, fe.Name, usedPorts, &warnings)
+		port, skipped := resolveBindPort(fe.Binds, fe.Name, usedPorts, &result.Warnings)
 		if skipped {
 			continue
 		}
@@ -179,14 +237,18 @@ func exportHAProxyToDir(text, outDir string) ([]string, error) {
 		entrypoint := entrypointNameForPort(port, fe.Name)
 		dynCfg := convertHTTPFrontend(fe, backendMap, entrypoint)
 
-		outPath := filepath.Join(outDir, fe.Name+".yaml")
-		if err := saveDynamicConfig(outPath, dynCfg); err != nil {
-			return warnings, err
+		if split {
+			path := filepath.Join(outDir, fe.Name+".yaml")
+			if err := saveDynamicConfig(path, dynCfg); err != nil {
+				return result, err
+			}
+		} else {
+			configs = append(configs, dynCfg)
 		}
 	}
 
 	for _, ls := range haCfg.Listens {
-		port, skipped := resolveBindPort(ls.Binds, ls.Name, usedPorts, &warnings)
+		port, skipped := resolveBindPort(ls.Binds, ls.Name, usedPorts, &result.Warnings)
 		if skipped {
 			continue
 		}
@@ -211,15 +273,30 @@ func exportHAProxyToDir(text, outDir string) ([]string, error) {
 			dynCfg = convertHTTPFrontend(fe, map[string]HAProxyBackend{be.Name: be}, entrypoint)
 		} else {
 			dynCfg = convertTCPListen(ls, entrypoint)
+			// Collect non-standard TCP entrypoints (not web/websecure)
+			if entrypoint != "web" && entrypoint != "websecure" && len(ls.Binds) > 0 {
+				result.TCPEntrypoints[entrypoint] = bindToEntrypointAddress(ls.Binds[0])
+			}
 		}
 
-		outPath := filepath.Join(outDir, ls.Name+".yaml")
-		if err := saveDynamicConfig(outPath, dynCfg); err != nil {
-			return warnings, err
+		if split {
+			path := filepath.Join(outDir, ls.Name+".yaml")
+			if err := saveDynamicConfig(path, dynCfg); err != nil {
+				return result, err
+			}
+		} else {
+			configs = append(configs, dynCfg)
 		}
 	}
 
-	return warnings, nil
+	if !split && len(configs) > 0 {
+		merged := mergeDynamicConfigs(configs)
+		if err := saveDynamicConfig(filepath.Join(outDir, outFile), merged); err != nil {
+			return result, err
+		}
+	}
+
+	return result, nil
 }
 
 // resolveBindPort extracts the port from the first bind address.
@@ -244,18 +321,31 @@ func resolveBindPort(binds []string, name string, usedPorts map[string]struct{},
 	return p, false
 }
 
+// outputFileName derives the YAML output filename from the HAProxy input file path.
+// Falls back to defaultName when the input path is empty (e.g. base64 input).
+func outputFileName(inputFilePath, defaultName string) string {
+	if inputFilePath == "" {
+		return defaultName
+	}
+	base := filepath.Base(inputFilePath)
+	ext := filepath.Ext(base)
+	return strings.TrimSuffix(base, ext) + ".yaml"
+}
+
 var (
 	haproxyExportFile      string
 	haproxyExportBase64    string
 	haproxyExportOutputDir string
+	haproxyExportSplit     bool
 )
 
 var haproxyExportCmd = &cobra.Command{
 	Use:   "export",
-	Short: "Convert an HAProxy config to Traefik dynamic YAML files",
+	Short: "Convert an HAProxy config to Traefik dynamic YAML",
 	Long: `Read an HAProxy configuration (from a file or base64-encoded string) and
-generate Traefik dynamic YAML files — one per frontend/listen block.
+generate Traefik dynamic YAML — merged into a single file by default.
 
+Use --split to write one file per frontend/listen block instead.
 The global and defaults sections of the HAProxy config are ignored.
 Blocks with ports that conflict with previously processed blocks are skipped
 with a warning.
@@ -263,7 +353,8 @@ with a warning.
 Examples:
   traefikctl haproxy export --file /etc/haproxy/haproxy.cfg
   traefikctl haproxy export --base64 <base64-encoded-config>
-  traefikctl haproxy export --file haproxy.cfg --output-dir /tmp/traefik-dynamic`,
+  traefikctl haproxy export --file haproxy.cfg --output-dir /tmp/preview
+  traefikctl haproxy export --file haproxy.cfg --split`,
 	SilenceUsage: true,
 	RunE:         runHAProxyExport,
 }
@@ -272,6 +363,7 @@ func init() {
 	haproxyExportCmd.Flags().StringVar(&haproxyExportFile, "file", "", "Path to HAProxy config file")
 	haproxyExportCmd.Flags().StringVar(&haproxyExportBase64, "base64", "", "Base64-encoded HAProxy config")
 	haproxyExportCmd.Flags().StringVar(&haproxyExportOutputDir, "output-dir", defaultDynamicDir, "Output directory for Traefik YAML files")
+	haproxyExportCmd.Flags().BoolVar(&haproxyExportSplit, "split", false, "Write one YAML file per frontend/listen block instead of a single merged file")
 	haproxyCmd.AddCommand(haproxyExportCmd)
 }
 
@@ -290,8 +382,9 @@ func runHAProxyExport(cmd *cobra.Command, args []string) error {
 		return permissionHint("create output directory", outDir, err)
 	}
 
-	warnings, err := exportHAProxyToDir(text, outDir)
-	for _, w := range warnings {
+	outFile := outputFileName(haproxyExportFile, "haproxy-export.yaml")
+	result, err := exportHAProxyToDir(text, outDir, outFile, haproxyExportSplit)
+	for _, w := range result.Warnings {
 		logger.Warn("%s", w)
 	}
 	if err != nil {
@@ -299,6 +392,17 @@ func runHAProxyExport(cmd *cobra.Command, args []string) error {
 	}
 
 	logger.Info("HAProxy export complete. Files written to %s", outDir)
-	logger.Info("NOTE: TCP entrypoints must be manually added to your traefik.yaml.")
+
+	if len(result.TCPEntrypoints) > 0 {
+		logger.Info("NOTE: Add the following TCP entrypoints to your traefik.yaml:")
+		fmt.Println()
+		fmt.Println("  entryPoints:")
+		for name, addr := range result.TCPEntrypoints {
+			fmt.Printf("    %s:\n", name)
+			fmt.Printf("      address: \"%s\"\n", addr)
+		}
+		fmt.Println()
+	}
+
 	return nil
 }

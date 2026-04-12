@@ -83,6 +83,20 @@ func TestExtractPort(t *testing.T) {
 	})
 }
 
+func TestBindToEntrypointAddress(t *testing.T) {
+	t.Run("given *:80 then returns :80", func(t *testing.T) {
+		require.Equal(t, ":80", bindToEntrypointAddress("*:80"))
+	})
+
+	t.Run("given 10.99.0.168:5672 then returns 10.99.0.168:5672", func(t *testing.T) {
+		require.Equal(t, "10.99.0.168:5672", bindToEntrypointAddress("10.99.0.168:5672"))
+	})
+
+	t.Run("given *:3306 then returns :3306", func(t *testing.T) {
+		require.Equal(t, ":3306", bindToEntrypointAddress("*:3306"))
+	})
+}
+
 func TestCheckPortConflict(t *testing.T) {
 	t.Run("when port not in used set then returns false", func(t *testing.T) {
 		used := map[string]struct{}{"80": {}}
@@ -249,6 +263,68 @@ func TestConvertTCPListen(t *testing.T) {
 	})
 }
 
+func TestMergeDynamicConfigs(t *testing.T) {
+	t.Run("must merge HTTP routers and services from multiple configs", func(t *testing.T) {
+		a := &DynamicConfig{HTTP: &HTTPConfig{
+			Routers:  map[string]*Router{"router-a": {Rule: "Host(`a.com`)"}},
+			Services: map[string]*Service{"svc-a": {LoadBalancer: &LoadBalancer{}}},
+		}}
+		b := &DynamicConfig{HTTP: &HTTPConfig{
+			Routers:  map[string]*Router{"router-b": {Rule: "Host(`b.com`)"}},
+			Services: map[string]*Service{"svc-b": {LoadBalancer: &LoadBalancer{}}},
+		}}
+		merged := mergeDynamicConfigs([]*DynamicConfig{a, b})
+		require.NotNil(t, merged.HTTP)
+		require.Contains(t, merged.HTTP.Routers, "router-a")
+		require.Contains(t, merged.HTTP.Routers, "router-b")
+		require.Contains(t, merged.HTTP.Services, "svc-a")
+		require.Contains(t, merged.HTTP.Services, "svc-b")
+	})
+
+	t.Run("must merge TCP routers and services from multiple configs", func(t *testing.T) {
+		a := &DynamicConfig{TCP: &TCPConfig{
+			Routers:  map[string]*TCPRouter{"tcp-a": {Rule: "HostSNI(`*`)"}},
+			Services: map[string]*TCPService{"tcp-svc-a": {}},
+		}}
+		b := &DynamicConfig{TCP: &TCPConfig{
+			Routers:  map[string]*TCPRouter{"tcp-b": {Rule: "HostSNI(`*`)"}},
+			Services: map[string]*TCPService{"tcp-svc-b": {}},
+		}}
+		merged := mergeDynamicConfigs([]*DynamicConfig{a, b})
+		require.NotNil(t, merged.TCP)
+		require.Contains(t, merged.TCP.Routers, "tcp-a")
+		require.Contains(t, merged.TCP.Routers, "tcp-b")
+	})
+
+	t.Run("must handle mixed HTTP and TCP configs", func(t *testing.T) {
+		http := &DynamicConfig{HTTP: &HTTPConfig{
+			Routers:  map[string]*Router{"r": {Rule: "Host(`x.com`)"}},
+			Services: map[string]*Service{"s": {}},
+		}}
+		tcp := &DynamicConfig{TCP: &TCPConfig{
+			Routers:  map[string]*TCPRouter{"t": {Rule: "HostSNI(`*`)"}},
+			Services: map[string]*TCPService{"ts": {}},
+		}}
+		merged := mergeDynamicConfigs([]*DynamicConfig{http, tcp})
+		require.NotNil(t, merged.HTTP)
+		require.NotNil(t, merged.TCP)
+	})
+}
+
+func TestOutputFileName(t *testing.T) {
+	t.Run("given haproxy.cfg returns haproxy.yaml", func(t *testing.T) {
+		require.Equal(t, "haproxy.yaml", outputFileName("/etc/haproxy/haproxy.cfg", "haproxy-export.yaml"))
+	})
+
+	t.Run("given empty path returns default name", func(t *testing.T) {
+		require.Equal(t, "haproxy-export.yaml", outputFileName("", "haproxy-export.yaml"))
+	})
+
+	t.Run("given file without extension returns name with .yaml", func(t *testing.T) {
+		require.Equal(t, "myconfig.yaml", outputFileName("/path/to/myconfig", "haproxy-export.yaml"))
+	})
+}
+
 const fullHAProxyConfig = `
 frontend hapctl-traefik-http
     bind *:80
@@ -275,18 +351,33 @@ listen hapctl-game-server
 `
 
 func TestExportHAProxyToDir(t *testing.T) {
-	t.Run("must create one yaml file per frontend", func(t *testing.T) {
+	t.Run("must write single merged file by default", func(t *testing.T) {
 		dir := t.TempDir()
-		warnings, err := exportHAProxyToDir(fullHAProxyConfig, dir)
+		result, err := exportHAProxyToDir(fullHAProxyConfig, dir, "haproxy.yaml", false)
 		require.NoError(t, err)
-		require.Empty(t, warnings)
+		require.Empty(t, result.Warnings)
+
+		data, err := os.ReadFile(filepath.Join(dir, "haproxy.yaml"))
+		require.NoError(t, err)
+		content := string(data)
+		require.Contains(t, content, "http:")
+		require.Contains(t, content, "tcp:")
+		require.Contains(t, content, "hapctl-traefik-http")
+		require.Contains(t, content, "hapctl-game-server")
+	})
+
+	t.Run("when split is true must create one yaml file per frontend", func(t *testing.T) {
+		dir := t.TempDir()
+		result, err := exportHAProxyToDir(fullHAProxyConfig, dir, "", true)
+		require.NoError(t, err)
+		require.Empty(t, result.Warnings)
 		_, err = os.Stat(filepath.Join(dir, "hapctl-traefik-http.yaml"))
 		require.NoError(t, err)
 	})
 
-	t.Run("must create one yaml file per listen block", func(t *testing.T) {
+	t.Run("when split is true must create one yaml file per listen block", func(t *testing.T) {
 		dir := t.TempDir()
-		_, err := exportHAProxyToDir(fullHAProxyConfig, dir)
+		_, err := exportHAProxyToDir(fullHAProxyConfig, dir, "", true)
 		require.NoError(t, err)
 		_, err = os.Stat(filepath.Join(dir, "hapctl-game-server.yaml"))
 		require.NoError(t, err)
@@ -315,10 +406,10 @@ backend second-backend
     server srv 127.0.0.1:8002 check
 `
 		dir := t.TempDir()
-		warnings, err := exportHAProxyToDir(conflictCfg, dir)
+		result, err := exportHAProxyToDir(conflictCfg, dir, "", true)
 		require.NoError(t, err)
-		require.Len(t, warnings, 1)
-		require.Contains(t, warnings[0], "80")
+		require.Len(t, result.Warnings, 1)
+		require.Contains(t, result.Warnings[0], "80")
 
 		_, err = os.Stat(filepath.Join(dir, "first-http.yaml"))
 		require.NoError(t, err)
@@ -335,7 +426,7 @@ listen hapctl-vpn-http
     server hapctl-vault 127.0.0.1:31201 check
 `
 		dir := t.TempDir()
-		_, err := exportHAProxyToDir(httpListenCfg, dir)
+		_, err := exportHAProxyToDir(httpListenCfg, dir, "", true)
 		require.NoError(t, err)
 
 		data, err := os.ReadFile(filepath.Join(dir, "hapctl-vpn-http.yaml"))
@@ -343,6 +434,27 @@ listen hapctl-vpn-http
 		content := string(data)
 		require.Contains(t, content, "http:")
 		require.NotContains(t, content, "tcp:")
+	})
+
+	t.Run("must collect TCP entrypoints with correct address for IP-specific binds", func(t *testing.T) {
+		tcpCfg := `
+listen hapctl-rabbitmq
+    bind 10.99.0.168:5672
+    mode tcp
+    balance roundrobin
+    server hapctl-rabbitmq 127.0.0.1:31672 check
+
+listen hapctl-game-server
+    bind *:7777
+    mode tcp
+    balance roundrobin
+    server hapctl-game-server 127.0.0.1:30777 check
+`
+		dir := t.TempDir()
+		result, err := exportHAProxyToDir(tcpCfg, dir, "out.yaml", false)
+		require.NoError(t, err)
+		require.Equal(t, "10.99.0.168:5672", result.TCPEntrypoints["hapctl-rabbitmq"])
+		require.Equal(t, ":7777", result.TCPEntrypoints["hapctl-game-server"])
 	})
 }
 
@@ -389,15 +501,15 @@ func TestResolveBindPort(t *testing.T) {
 
 func TestHAProxyExportCommandFlags(t *testing.T) {
 	t.Run("must have --file flag", func(t *testing.T) {
-		f := haproxyExportCmd.Flags().Lookup("file")
-		require.NotNil(t, f)
+		require.NotNil(t, haproxyExportCmd.Flags().Lookup("file"))
 	})
 	t.Run("must have --base64 flag", func(t *testing.T) {
-		f := haproxyExportCmd.Flags().Lookup("base64")
-		require.NotNil(t, f)
+		require.NotNil(t, haproxyExportCmd.Flags().Lookup("base64"))
 	})
 	t.Run("must have --output-dir flag", func(t *testing.T) {
-		f := haproxyExportCmd.Flags().Lookup("output-dir")
-		require.NotNil(t, f)
+		require.NotNil(t, haproxyExportCmd.Flags().Lookup("output-dir"))
+	})
+	t.Run("must have --split flag", func(t *testing.T) {
+		require.NotNil(t, haproxyExportCmd.Flags().Lookup("split"))
 	})
 }
