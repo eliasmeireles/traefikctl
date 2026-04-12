@@ -40,6 +40,9 @@ test:
 	$(GO) test -v -race -coverprofile=coverage.out ./...
 	$(GO) tool cover -html=coverage.out -o coverage.html
 
+test-e2e: build ## Run end-to-end integration tests via multipass (requires VM to be running)
+	@bash .dev/multipass/run-e2e-tests.sh
+
 lint:
 	@echo "Running linters..."
 	@which golangci-lint > /dev/null || (echo "golangci-lint not found, install it from https://golangci-lint.run/usage/install/" && exit 1)

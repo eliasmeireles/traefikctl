@@ -34,7 +34,7 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 # Security settings
 NoNewPrivileges=true
 ProtectSystem=full
-ProtectHome=true
+ProtectHome=read-only
 ReadWritePaths=/etc/traefik /var/log/traefik
 
 [Install]

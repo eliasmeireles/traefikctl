@@ -96,6 +96,9 @@ prepare_volume() {
     cp "$SCRIPT_DIR/docker-compose.yml" "$VOLUMES_DIR/"
     cp -r "$SCRIPT_DIR/html" "$VOLUMES_DIR/"
     cp "$SCRIPT_DIR/generate-ssl.sh" "$VOLUMES_DIR/"
+    mkdir -p "$VOLUMES_DIR/test-fixtures"
+    cp -r "$SCRIPT_DIR/test-fixtures/"* "$VOLUMES_DIR/test-fixtures/"
+    cp "$SCRIPT_DIR/test-haproxy-export.sh" "$VOLUMES_DIR/" 2>/dev/null || true
 
     echo "[OK] Volume prepared at: $VOLUMES_DIR"
 }
@@ -130,6 +133,9 @@ setup_traefik_config() {
     # Link dynamic config directory to mounted volume
     multipass exec "$VM_NAME" -- sudo rm -rf /etc/traefik/dynamic
     multipass exec "$VM_NAME" -- sudo ln -sf /home/ubuntu/traefikctl/dynamic /etc/traefik/dynamic
+
+    # Allow non-ubuntu users (e.g. traefik service user) to traverse /home/ubuntu
+    multipass exec "$VM_NAME" -- sudo chmod o+x /home/ubuntu
 
     echo "[OK] Configuration linked from volume"
 }
