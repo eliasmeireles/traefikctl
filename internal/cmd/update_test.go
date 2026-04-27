@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -68,7 +69,7 @@ func TestDownloadToTemp(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		path, err := downloadToTemp(srv.URL + "/binary")
+		path, err := downloadToTemp(srv.URL+"/binary", t.TempDir())
 		require.NoError(t, err)
 		require.NotEmpty(t, path)
 
@@ -85,7 +86,46 @@ func TestDownloadToTemp(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, err := downloadToTemp(srv.URL + "/binary")
+		_, err := downloadToTemp(srv.URL+"/binary", t.TempDir())
+		require.Error(t, err)
+	})
+
+	t.Run("given unwritable target dir then falls back to default temp dir", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("hello"))
+		}))
+		defer srv.Close()
+
+		path, err := downloadToTemp(srv.URL+"/binary", "/nonexistent-dir-for-traefikctl-test")
+		require.NoError(t, err)
+		require.NotEmpty(t, path)
+		require.NoError(t, os.Remove(path))
+	})
+}
+
+func TestReplaceBinary(t *testing.T) {
+	t.Run("when src and dst on same filesystem then renames atomically", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "src")
+		dst := filepath.Join(dir, "dst")
+
+		require.NoError(t, os.WriteFile(src, []byte("payload"), 0644))
+		require.NoError(t, replaceBinary(src, dst))
+
+		_, err := os.Stat(src)
+		require.True(t, os.IsNotExist(err), "src should be moved")
+
+		content, err := os.ReadFile(dst)
+		require.NoError(t, err)
+		require.Equal(t, "payload", string(content))
+	})
+
+	t.Run("when dst dir does not exist then returns error", func(t *testing.T) {
+		dir := t.TempDir()
+		src := filepath.Join(dir, "src")
+		require.NoError(t, os.WriteFile(src, []byte("payload"), 0644))
+
+		err := replaceBinary(src, "/nonexistent-dir-for-traefikctl-test/dst")
 		require.Error(t, err)
 	})
 }

@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -56,7 +59,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	url := fmt.Sprintf(downloadURLPattern, version, goos, goarch)
 	logger.Info("Downloading traefikctl %s...", version)
 
-	tmp, err := downloadToTemp(url)
+	tmp, err := downloadToTemp(url, filepath.Dir(installPath))
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
@@ -66,7 +69,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to set permissions: %w", err)
 	}
 
-	if err := os.Rename(tmp, installPath); err != nil {
+	if err := replaceBinary(tmp, installPath); err != nil {
 		return permissionHint("install binary", installPath, err)
 	}
 
@@ -101,7 +104,10 @@ func fetchLatestVersion(apiURL string) (string, error) {
 }
 
 // downloadToTemp downloads the binary at url to a temporary file and returns its path.
-func downloadToTemp(url string) (string, error) {
+// The temp file is created in dir when possible so the final rename stays on the
+// same filesystem (atomic and avoids EXDEV cross-device errors). If dir is not
+// writable, it falls back to the OS default temp directory.
+func downloadToTemp(url, dir string) (string, error) {
 	resp, err := httpClient.Get(url) //nolint:gosec
 	if err != nil {
 		return "", err
@@ -112,9 +118,12 @@ func downloadToTemp(url string) (string, error) {
 		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	tmp, err := os.CreateTemp("", "traefikctl-update-*")
+	tmp, err := os.CreateTemp(dir, "traefikctl-update-*")
 	if err != nil {
-		return "", err
+		tmp, err = os.CreateTemp("", "traefikctl-update-*")
+		if err != nil {
+			return "", err
+		}
 	}
 	defer func() { _ = tmp.Close() }()
 
@@ -124,4 +133,46 @@ func downloadToTemp(url string) (string, error) {
 	}
 
 	return tmp.Name(), nil
+}
+
+// replaceBinary moves src to dst atomically when possible, falling back to a
+// copy when the two paths live on different filesystems (EXDEV).
+func replaceBinary(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	} else if !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+
+	staging, err := os.CreateTemp(filepath.Dir(dst), "traefikctl-update-*")
+	if err != nil {
+		return err
+	}
+	stagingPath := staging.Name()
+	cleanup := func() { _ = os.Remove(stagingPath) }
+
+	if _, err := io.Copy(staging, in); err != nil {
+		_ = staging.Close()
+		cleanup()
+		return err
+	}
+	if err := staging.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Chmod(stagingPath, 0755); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Rename(stagingPath, dst); err != nil {
+		cleanup()
+		return err
+	}
+	return nil
 }
