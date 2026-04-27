@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -8,6 +9,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestDownloadURLPattern(t *testing.T) {
+	t.Run("must build asset URLs that match the release workflow naming (hyphens, not underscores)", func(t *testing.T) {
+		got := fmt.Sprintf(downloadURLPattern, "v0.0.4-rc-02", "linux", "amd64")
+		want := "https://github.com/eliasmeireles/traefikctl/releases/download/v0.0.4-rc-02/traefikctl-linux-amd64"
+		require.Equal(t, want, got)
+	})
+}
 
 func TestFetchLatestVersion(t *testing.T) {
 	t.Run("when valid response then returns tag_name", func(t *testing.T) {

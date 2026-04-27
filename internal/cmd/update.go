@@ -15,9 +15,11 @@ import (
 )
 
 const (
-	defaultGitHubAPIURL  = "https://api.github.com/repos/eliasmeireles/traefikctl/releases/latest"
-	downloadURLPattern   = "https://github.com/eliasmeireles/traefikctl/releases/download/%s/traefikctl_%s_%s"
-	installPath          = "/usr/local/bin/traefikctl"
+	defaultGitHubAPIURL = "https://api.github.com/repos/eliasmeireles/traefikctl/releases/latest"
+	// Asset filename matches the release workflow output (release.yml uses
+	// "traefikctl-<os>-<arch>" with hyphens, not underscores).
+	downloadURLPattern = "https://github.com/eliasmeireles/traefikctl/releases/download/%s/traefikctl-%s-%s"
+	installPath        = "/usr/local/bin/traefikctl"
 )
 
 var httpClient = &http.Client{Timeout: 60 * time.Second}
