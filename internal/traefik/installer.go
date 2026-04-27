@@ -139,10 +139,9 @@ func (i *Installer) EnsureDirectories() error {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
-	}
-
-	// Set ownership
-	for _, dir := range dirs {
+		if err := os.Chmod(dir, 0755); err != nil {
+			logger.Warn("Failed to set mode on %s: %v", dir, err)
+		}
 		if err := runCommand("chown", "-R", "traefik:traefik", dir); err != nil {
 			logger.Warn("Failed to set ownership on %s: %v", dir, err)
 		}

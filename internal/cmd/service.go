@@ -8,8 +8,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eliasmeireles/traefikctl/internal/logger"
+	"github.com/eliasmeireles/traefikctl/internal/traefik"
 )
 
+// defaultServiceTemplate uses systemd's LogsDirectory= directive so /var/log/traefik
+// is (re)created with traefik:traefik ownership on every service start. Without
+// this, a manual recreation of the directory (e.g. after rm -rf /var/log/**)
+// would leave it as root:root and Traefik would crash on the first log write.
 const defaultServiceTemplate = `[Unit]
 Description=Traefik Proxy
 Documentation=https://github.com/eliasmeireles/traefikctl
@@ -35,7 +40,11 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=read-only
-ReadWritePaths=/etc/traefik /var/log/traefik
+ReadWritePaths=/etc/traefik
+
+# Ensure /var/log/traefik exists with traefik:traefik ownership on every start.
+LogsDirectory=traefik
+LogsDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target
@@ -115,6 +124,14 @@ func init() {
 
 func runServiceInstall(cmd *cobra.Command, args []string) error {
 	systemdPath := fmt.Sprintf("/etc/systemd/system/%s.service", serviceName)
+
+	installer := traefik.NewInstaller()
+	if err := installer.EnsureUser(); err != nil {
+		logger.Warn("Could not ensure traefik user: %v", err)
+	}
+	if err := installer.EnsureDirectories(); err != nil {
+		logger.Warn("Could not ensure traefik directories: %v", err)
+	}
 
 	if err := os.WriteFile(systemdPath, []byte(defaultServiceTemplate), 0644); err != nil {
 		return fmt.Errorf("failed to write service file: %w", err)
