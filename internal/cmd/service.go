@@ -133,6 +133,7 @@ func runServiceInstall(cmd *cobra.Command, args []string) error {
 	logger.Info("Service installed and enabled")
 	logger.Info("Start with: sudo systemctl start %s", serviceName)
 	logger.Info("View logs: sudo journalctl -u %s -f", serviceName)
+	logger.Info("Enable log rotation (recommended): sudo traefikctl logs rotation install")
 
 	return nil
 }
