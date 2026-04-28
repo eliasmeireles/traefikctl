@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"syscall"
 	"time"
@@ -18,12 +19,17 @@ import (
 )
 
 const (
-	defaultGitHubAPIURL = "https://api.github.com/repos/eliasmeireles/traefikctl/releases/latest"
+	defaultReleasesAPIURL = "https://api.github.com/repos/eliasmeireles/traefikctl/releases?per_page=30"
 	// Asset filename matches the release workflow output (release.yml uses
 	// "traefikctl-<os>-<arch>" with hyphens, not underscores).
 	downloadURLPattern = "https://github.com/eliasmeireles/traefikctl/releases/download/%s/traefikctl-%s-%s"
 	installPath        = "/usr/local/bin/traefikctl"
 )
+
+// stableTagRegex matches semver-shaped release tags (e.g. v0.0.4, v1.2.3).
+// Pre-release tags like "v0.0.4-rc-05" are intentionally excluded so the
+// default 'traefikctl update' (no --version) only ships final builds.
+var stableTagRegex = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
 
 var httpClient = &http.Client{Timeout: 60 * time.Second}
 
@@ -45,10 +51,10 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	version := updateVersion
 
 	if version == "" {
-		logger.Info("Fetching latest version...")
-		v, err := fetchLatestVersion(defaultGitHubAPIURL)
+		logger.Info("Fetching latest stable version...")
+		v, err := fetchLatestStableVersion(defaultReleasesAPIURL)
 		if err != nil {
-			return fmt.Errorf("failed to fetch latest version: %w", err)
+			return fmt.Errorf("failed to fetch latest stable version: %w", err)
 		}
 		version = v
 	}
@@ -77,8 +83,13 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// fetchLatestVersion queries the GitHub releases API at apiURL and returns the tag_name of the latest release.
-func fetchLatestVersion(apiURL string) (string, error) {
+// fetchLatestStableVersion lists releases at apiURL (newest first) and
+// returns the first tag_name that matches stableTagRegex and is neither a
+// draft nor a pre-release. Pre-release tags (e.g. "v0.0.4-rc-05") are
+// intentionally skipped so users running 'traefikctl update' without a
+// --version flag never accidentally install an RC. To install one, pass
+// --version explicitly.
+func fetchLatestStableVersion(apiURL string) (string, error) {
 	resp, err := httpClient.Get(apiURL) //nolint:gosec
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -89,18 +100,24 @@ func fetchLatestVersion(apiURL string) (string, error) {
 		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var payload struct {
-		TagName string `json:"tag_name"`
+	var releases []struct {
+		TagName    string `json:"tag_name"`
+		Draft      bool   `json:"draft"`
+		Prerelease bool   `json:"prerelease"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	if payload.TagName == "" {
-		return "", fmt.Errorf("tag_name missing in response")
+	for _, r := range releases {
+		if r.Draft || r.Prerelease {
+			continue
+		}
+		if stableTagRegex.MatchString(r.TagName) {
+			return r.TagName, nil
+		}
 	}
-
-	return payload.TagName, nil
+	return "", fmt.Errorf("no stable release found in latest %d entries (pre-release builds are skipped — pass --version to install one)", len(releases))
 }
 
 // downloadToTemp downloads the binary at url to a temporary file and returns its path.
