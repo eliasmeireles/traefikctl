@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>traefikctl - Traefik Management CLI</title>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+  <meta name="description" content="traefikctl - A powerful CLI tool for managing Traefik proxy configurations">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/themes/vue.css" />
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/@.alertifyjs/build/css/alertify.min.css" />
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/prismjs@1/themes/prism-tomorrow.min.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <style>
+    :root {
+      --theme-color: #009688;
+      --sidebar-width: 280px;
+    }
+    
+    .cover {
+      background: linear-gradient(to bottom, #009688 0%, #00695c 100%);
+    }
+    
+    .cover h1 {
+      color: #fff;
+      font-size: 2.5em;
+    }
+    
+    .cover-subtitle {
+      color: rgba(255,255,255,0.9);
+    }
+    
+    .tip {
+      border-left-color: #009688;
+    }
+    
+    .warning {
+      border-left-color: #ff9800;
+    }
+    
+    blockquote {
+      border-left-color: #009688;
+      background: #f8faf9;
+    }
+    
+    .app-name-link {
+      color: #009688;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">Loading...</div>
+  <script>
+    window.$docsify = {
+      name: 'traefikctl',
+      repo: 'https://github.com/eliasmeireles/traefikctl',
+      loadSidebar: true,
+      subMaxLevel: 3,
+      auto2top: true,
+      search: {
+        maxAge: 86400000,
+        paths: 'auto',
+        placeholder: 'Search documentation...',
+        noData: 'No results found!',
+        depth: 3
+      },
+      copyCode: {
+        buttonText: 'Copy',
+        errorText: 'Error',
+        successText: 'Copied!'
+      },
+      pagination: {
+        previousText: 'Previous',
+        nextText: 'Next',
+        crossChapter: true
+      },
+      tabs: {
+        persist: true,
+        sync: true,
+        theme: 'classic',
+        tabComments: true,
+        tabHeadings: true
+      },
+      'flexible-alerts': {
+        style: 'flat'
+      },
+      footer: {
+        copy: '<span>&copy; 2024 traefikctl</span>',
+        auth: '<span>MIT License</span>',
+        pre: '<hr/>',
+        post: '<span>Built with <a href="https://docsify.js.org" target="_blank">docsify</a></span>'
+      }
+    };
+  </script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/docsify.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/emoji.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/search.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/front-matter.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify-copy-code/dist/docsify-copy-code.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify-pagination/dist/docsify-pagination.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/prismjs@1/components/go.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/prismjs@1/components/yaml.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/prismjs@1/components/bash.min.js"></script>
+</body>
+</html>

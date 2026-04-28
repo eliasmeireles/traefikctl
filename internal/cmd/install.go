@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -9,21 +10,28 @@ import (
 	"github.com/eliasmeireles/traefikctl/internal/traefik"
 )
 
+const latestVersionAlias = "latest"
+
 var (
 	checkOnly      bool
 	installVersion string
+	installUpgrade bool
 )
 
 var installCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install Traefik on the system",
-	Long: `Download and install Traefik binary from GitHub releases.
+	Short: "Install or upgrade Traefik on the system",
+	Long: `Download and install (or upgrade) the Traefik binary from GitHub releases.
 Supports amd64 and arm64 architectures.
 Requires root/sudo privileges.
 
+Use --version latest to fetch the most recent release from the
+Traefik GitHub API. Use --upgrade to replace an existing binary
+with the requested version.
+
 This command will:
 1. Download Traefik binary to /usr/local/bin/traefik
-2. Create traefik system user and group
+2. Create traefik system user and group (if missing)
 3. Set capabilities for low port binding
 4. Create required directories`,
 	SilenceUsage: true,
@@ -32,7 +40,8 @@ This command will:
 
 func init() {
 	installCmd.Flags().BoolVar(&checkOnly, "check", false, "Only check if Traefik is installed")
-	installCmd.Flags().StringVar(&installVersion, "version", traefik.DefaultVersion, "Traefik version to install")
+	installCmd.Flags().StringVar(&installVersion, "version", traefik.DefaultVersion, "Traefik version to install (e.g. v3.4.0 or 'latest')")
+	installCmd.Flags().BoolVar(&installUpgrade, "upgrade", false, "Replace the existing Traefik binary with the requested version")
 	rootCmd.AddCommand(installCmd)
 }
 
@@ -40,35 +49,67 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	installer := traefik.NewInstaller()
 
 	if checkOnly {
-		if installer.IsInstalled() {
-			version, err := installer.GetVersion()
-			if err != nil {
-				return fmt.Errorf("failed to get version: %w", err)
-			}
-			logger.Info("Traefik is installed:\n%s", version)
-		} else {
-			fmt.Println("Traefik is not installed")
-		}
-		return nil
+		return runInstallCheck(installer)
 	}
 
-	if installer.IsInstalled() {
-		version, _ := installer.GetVersion()
-		logger.Info("Traefik is already installed:\n%s", version)
-	} else {
-		logger.Info("Installing Traefik %s...", installVersion)
-		if err := installer.Install(installVersion); err != nil {
-			return fmt.Errorf("installation failed: %w", err)
-		}
+	version, err := resolveTraefikVersion(installer, installVersion)
+	if err != nil {
+		return err
+	}
 
+	if installer.IsInstalled() && !installUpgrade {
+		current, _ := installer.GetVersion()
+		logger.Info("Traefik is already installed:\n%s", current)
+		logger.Info("Run with --upgrade to replace it (e.g. 'sudo traefikctl install --upgrade --version %s').", version)
+		return runInstallSetup(installer)
+	}
+
+	action := "Installing"
+	if installer.IsInstalled() {
+		action = "Upgrading to"
+	}
+	logger.Info("%s Traefik %s...", action, version)
+
+	if err := installer.Install(version); err != nil {
+		return fmt.Errorf("installation failed: %w", err)
+	}
+
+	if newVersion, err := installer.GetVersion(); err != nil {
+		logger.Warn("Installation completed but failed to verify: %v", err)
+	} else {
+		logger.Info("Installation completed:\n%s", newVersion)
+	}
+
+	if err := runInstallSetup(installer); err != nil {
+		return err
+	}
+
+	if installUpgrade {
+		logger.Info("\nRestart Traefik to load the new binary: sudo traefikctl service restart")
+	} else {
+		logger.Info("\nNext steps:")
+		logger.Info("1. Generate configs: sudo traefikctl config --generate")
+		logger.Info("2. Install service: sudo traefikctl service install")
+		logger.Info("3. Start service: sudo systemctl start traefikctl")
+		logger.Info("4. Check setup: traefikctl check")
+	}
+	return nil
+}
+
+func runInstallCheck(installer *traefik.Installer) error {
+	if installer.IsInstalled() {
 		version, err := installer.GetVersion()
 		if err != nil {
-			logger.Warn("Installation completed but failed to verify: %v", err)
-		} else {
-			logger.Info("Installation completed:\n%s", version)
+			return fmt.Errorf("failed to get version: %w", err)
 		}
+		logger.Info("Traefik is installed:\n%s", version)
+		return nil
 	}
+	fmt.Println("Traefik is not installed")
+	return nil
+}
 
+func runInstallSetup(installer *traefik.Installer) error {
 	logger.Info("\n=== Setting up system ===")
 
 	if err := installer.EnsureUser(); err != nil {
@@ -78,12 +119,20 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	if err := installer.EnsureDirectories(); err != nil {
 		logger.Error("Failed to create directories: %v", err)
 	}
-
-	logger.Info("\nNext steps:")
-	logger.Info("1. Generate configs: sudo traefikctl config --generate")
-	logger.Info("2. Install service: sudo traefikctl service install")
-	logger.Info("3. Start service: sudo systemctl start traefikctl")
-	logger.Info("4. Check setup: traefikctl check")
-
 	return nil
+}
+
+// resolveTraefikVersion expands the "latest" alias by querying the GitHub
+// API. Any other value is returned verbatim (cobra applies the default).
+func resolveTraefikVersion(installer *traefik.Installer, requested string) (string, error) {
+	if !strings.EqualFold(requested, latestVersionAlias) {
+		return requested, nil
+	}
+	logger.Info("Fetching latest Traefik version...")
+	v, err := installer.LatestVersion()
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve latest version: %w", err)
+	}
+	logger.Info("Latest Traefik version: %s", v)
+	return v, nil
 }

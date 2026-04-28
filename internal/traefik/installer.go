@@ -1,20 +1,26 @@
 package traefik
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/eliasmeireles/traefikctl/internal/logger"
 )
 
 const (
-	DefaultVersion   = "v3.3.5"
-	BinaryPath       = "/usr/local/bin/traefik"
-	DownloadURLBase  = "https://github.com/traefik/traefik/releases/download"
+	DefaultVersion  = "v3.3.5"
+	BinaryPath      = "/usr/local/bin/traefik"
+	DownloadURLBase = "https://github.com/traefik/traefik/releases/download"
+	LatestAPIURL    = "https://api.github.com/repos/traefik/traefik/releases/latest"
 )
+
+var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 type Installer struct{}
 
@@ -34,6 +40,35 @@ func (i *Installer) GetVersion() (string, error) {
 		return "", fmt.Errorf("failed to get Traefik version: %w", err)
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+// LatestVersion queries the Traefik GitHub API and returns the tag_name of
+// the latest release (e.g. "v3.4.0").
+func (i *Installer) LatestVersion() (string, error) {
+	return fetchLatestVersion(LatestAPIURL)
+}
+
+func fetchLatestVersion(apiURL string) (string, error) {
+	resp, err := httpClient.Get(apiURL) //nolint:gosec
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+	if payload.TagName == "" {
+		return "", fmt.Errorf("tag_name missing in response")
+	}
+	return payload.TagName, nil
 }
 
 func (i *Installer) Install(version string) error {
@@ -139,10 +174,9 @@ func (i *Installer) EnsureDirectories() error {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
-	}
-
-	// Set ownership
-	for _, dir := range dirs {
+		if err := os.Chmod(dir, 0755); err != nil {
+			logger.Warn("Failed to set mode on %s: %v", dir, err)
+		}
 		if err := runCommand("chown", "-R", "traefik:traefik", dir); err != nil {
 			logger.Warn("Failed to set ownership on %s: %v", dir, err)
 		}
