@@ -15,18 +15,29 @@ import (
 // is (re)created with traefik:traefik ownership on every service start. Without
 // this, a manual recreation of the directory (e.g. after rm -rf /var/log/**)
 // would leave it as root:root and Traefik would crash on the first log write.
+//
+// It also has to survive boot ordering. An entry point may bind to one specific
+// address rather than the wildcard — typically an overlay/VPN interface such as
+// WireGuard, NetBird or Tailscale — and those are configured well after
+// network-online.target is reached. Traefik does not retry a failed bind, it
+// exits. Restart=always plus StartLimitIntervalSec=0 means systemd keeps
+// retrying until the address shows up, instead of tripping the default start
+// limit (5 starts within 10s) and leaving the proxy down until someone notices.
 const defaultServiceTemplate = `[Unit]
 Description=Traefik Proxy
 Documentation=https://github.com/eliasmeireles/traefikctl
 After=network-online.target
 Wants=network-online.target
+# Entry points bound to a late-appearing address (VPN/overlay interfaces) make
+# Traefik exit at boot. Never give up restarting it.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 User=traefik
 Group=traefik
 ExecStart=/usr/local/bin/traefik --configFile=/etc/traefik/traefik.yaml
-Restart=on-failure
+Restart=always
 RestartSec=5s
 StandardOutput=journal
 StandardError=journal

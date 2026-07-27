@@ -37,6 +37,22 @@ func TestDefaultServiceTemplate(t *testing.T) {
 		assert.Contains(t, defaultServiceTemplate, "ReadWritePaths=/etc/traefik")
 	})
 
+	t.Run("must keep restarting when an entry point binds to an address that appears late at boot", func(t *testing.T) {
+		// Traefik exits instead of retrying when a bind fails, which happens
+		// when an entry point targets a VPN/overlay address configured after
+		// network-online.target. on-failure alone is not enough: systemd's
+		// default start limit stops the unit for good after 5 tries in 10s.
+		assert.Contains(t, defaultServiceTemplate, "Restart=always")
+		assert.Contains(t, defaultServiceTemplate, "StartLimitIntervalSec=0")
+		assert.NotContains(t, defaultServiceTemplate, "Restart=on-failure")
+	})
+
+	t.Run("must declare StartLimitIntervalSec in [Unit], where systemd expects it", func(t *testing.T) {
+		unitSection := strings.SplitN(defaultServiceTemplate, "[Service]", 2)[0]
+		assert.Contains(t, unitSection, "StartLimitIntervalSec=0",
+			"systemd >= 229 parses StartLimitIntervalSec from [Unit]; in [Service] it is silently ignored on current releases")
+	})
+
 	t.Run("must not redundantly grant ReadWritePaths on /var/log/traefik when LogsDirectory handles it", func(t *testing.T) {
 		for _, line := range strings.Split(defaultServiceTemplate, "\n") {
 			line = strings.TrimSpace(line)
