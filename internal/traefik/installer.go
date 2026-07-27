@@ -16,6 +16,7 @@ import (
 const (
 	DefaultVersion  = "v3.3.5"
 	BinaryPath      = "/usr/local/bin/traefik"
+	ACMEStorePath   = "/etc/traefik/acme.json"
 	DownloadURLBase = "https://github.com/traefik/traefik/releases/download"
 	LatestAPIURL    = "https://api.github.com/repos/traefik/traefik/releases/latest"
 )
@@ -180,6 +181,37 @@ func (i *Installer) EnsureDirectories() error {
 		if err := runCommand("chown", "-R", "traefik:traefik", dir); err != nil {
 			logger.Warn("Failed to set ownership on %s: %v", dir, err)
 		}
+	}
+
+	return i.ensureACMEStore(ACMEStorePath)
+}
+
+// ensureACMEStore pre-creates the ACME key store.
+//
+// Traefik runs as the traefik user, but /etc/traefik itself stays root-owned,
+// so Traefik cannot create acme.json on its own. Any certificatesResolvers
+// entry then dies at startup with "unable to get ACME account: open
+// /etc/traefik/acme.json: permission denied" and the resolver is silently
+// dropped from the list — TLS issuance never works and nothing says why.
+//
+// An existing store is never truncated: it holds issued certificates and
+// account keys. Only ownership and mode are corrected, and Traefik refuses to
+// use the file unless it is 0600.
+func (i *Installer) ensureACMEStore(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			logger.Warn("Failed to create %s: %v", path, err)
+			return nil
+		}
+		_ = f.Close()
+	}
+
+	if err := os.Chmod(path, 0600); err != nil {
+		logger.Warn("Failed to set mode on %s: %v", path, err)
+	}
+	if err := runCommand("chown", "traefik:traefik", path); err != nil {
+		logger.Warn("Failed to set ownership on %s: %v", path, err)
 	}
 
 	return nil

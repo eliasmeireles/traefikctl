@@ -3,8 +3,11 @@ package traefik
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,5 +51,36 @@ func TestFetchLatestVersion(t *testing.T) {
 
 		_, err := fetchLatestVersion(srv.URL)
 		require.Error(t, err)
+	})
+}
+
+func TestEnsureACMEStore(t *testing.T) {
+	i := NewInstaller()
+
+	t.Run("must create the store 0600 so Traefik does not skip the resolver", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "acme.json")
+
+		require.NoError(t, i.ensureACMEStore(path))
+
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0600), info.Mode().Perm(),
+			"Traefik refuses an ACME store that is readable by anyone else")
+	})
+
+	t.Run("must never truncate an existing store", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "acme.json")
+		existing := []byte(`{"letsencrypt":{"Account":{"Email":"admin@example.com"}}}`)
+		require.NoError(t, os.WriteFile(path, existing, 0644))
+
+		require.NoError(t, i.ensureACMEStore(path))
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, existing, got, "the store holds issued certificates and account keys")
+
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0600), info.Mode().Perm(), "loose permissions must still be tightened")
 	})
 }
