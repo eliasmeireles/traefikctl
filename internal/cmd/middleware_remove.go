@@ -27,6 +27,10 @@ func init() {
 }
 
 func runMiddlewareRemove(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	filePath, err := selectDynamicFile(mwRemoveFile)
 	if err != nil {
 		return err

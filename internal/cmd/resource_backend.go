@@ -65,6 +65,10 @@ func init() {
 }
 
 func runBackendAdd(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	filePath, err := selectDynamicFile(backendAddFile)
 	if err != nil {
 		return err
@@ -80,6 +84,10 @@ func runBackendAdd(cmd *cobra.Command, args []string) error {
 }
 
 func runBackendRemove(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	filePath, err := selectDynamicFile(backendRemoveFile)
 	if err != nil {
 		return err

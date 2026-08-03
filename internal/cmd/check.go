@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eliasmeireles/traefikctl/internal/logger"
+	"github.com/eliasmeireles/traefikctl/internal/validate"
 )
 
 var checkCmd = &cobra.Command{
@@ -49,15 +51,35 @@ func (c *checkResult) fail(msg, fix string) {
 }
 
 func runCheck(cmd *cobra.Command, args []string) {
-	result := &checkResult{}
+	result := performChecks()
+	printChecks(result)
 
-	logger.Info("=== traefikctl System Check ===\n")
+	if result.failed > 0 {
+		fmt.Println()
+		logger.Error("Some checks failed. Fix the issues above and run 'traefikctl check' again.")
+		os.Exit(1)
+	}
+}
+
+// performChecks runs every check and returns the result without printing
+// anything or exiting — so callers like `setup` can inspect pass/warn/fail
+// counts and decide what to do next themselves.
+func performChecks() *checkResult {
+	result := &checkResult{}
 
 	checkTraefikInstalled(result)
 	checkTraefikUser(result)
 	checkDirectoriesExist(result)
 	checkStaticConfig(result)
 	checkServiceFileExists(result)
+
+	return result
+}
+
+// printChecks renders a performChecks() result the same way `traefikctl
+// check` always has.
+func printChecks(result *checkResult) {
+	logger.Info("=== traefikctl System Check ===\n")
 
 	fmt.Println()
 	for _, line := range result.results {
@@ -67,12 +89,6 @@ func runCheck(cmd *cobra.Command, args []string) {
 	fmt.Println()
 	logger.Info("=== Summary ===")
 	logger.Info("Passed: %d | Warnings: %d | Failed: %d", result.passed, result.warned, result.failed)
-
-	if result.failed > 0 {
-		fmt.Println()
-		logger.Error("Some checks failed. Fix the issues above and run 'traefikctl check' again.")
-		os.Exit(1)
-	}
 }
 
 func checkTraefikInstalled(r *checkResult) {
@@ -149,15 +165,45 @@ func checkDirectoriesExist(r *checkResult) {
 }
 
 func checkStaticConfig(r *checkResult) {
-	staticPath := "/etc/traefik/traefik.yaml"
-	if _, err := os.Stat(staticPath); err != nil {
-		r.fail(
-			"Static config not found",
-			"sudo traefikctl config --generate",
-		)
-	} else {
-		r.pass(fmt.Sprintf("Static config exists: %s", staticPath))
+	staticPath := defaultStaticConfigPath
+
+	result, err := validate.StaticFile(context.Background(), staticPath, validate.Options{})
+	if err != nil {
+		r.fail(fmt.Sprintf("Failed to validate %s: %v", staticPath, err), "sudo traefikctl validate")
+		return
 	}
+
+	if result.Skipped {
+		// Traefik isn't installed yet — os.Stat still tells us whether the
+		// file exists at all, which is the one thing we CAN check.
+		if _, statErr := os.Stat(staticPath); statErr != nil {
+			r.fail("Static config not found", "sudo traefikctl config --generate")
+			return
+		}
+		r.warn(fmt.Sprintf("Static config exists but could not be fully validated: %s", result.SkipReason))
+		return
+	}
+
+	if !result.OK() {
+		for _, f := range result.Errors() {
+			r.fail(
+				fmt.Sprintf("Static config %s:%d: %s", staticPath, f.Line, f.Message),
+				firstNonEmpty(f.Hint, "sudo traefikctl validate"),
+			)
+		}
+		return
+	}
+
+	r.pass(fmt.Sprintf("Static config exists and is valid: %s", staticPath))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func checkServiceFileExists(r *checkResult) {

@@ -20,6 +20,7 @@ var (
 	cfgClean     bool
 	cfgACME      bool
 	cfgACMEEmail string
+	cfgValidate  bool
 )
 
 var configCmd = &cobra.Command{
@@ -35,7 +36,11 @@ var configCmd = &cobra.Command{
 
   --clean     Used with --view to strip comments and empty lines.
 
-  --force     Used with --generate to overwrite existing files.`,
+  --force     Used with --generate to overwrite existing files.
+
+  --validate  Check the static config against Traefik's own decoder,
+              reporting every rejected field at once (see 'traefikctl
+              validate --help' for the long-form command).`,
 	SilenceUsage: true,
 	RunE:         runConfig,
 }
@@ -47,11 +52,19 @@ func init() {
 	configCmd.Flags().BoolVar(&cfgForce, "force", false, "Overwrite existing files (use with --generate)")
 	configCmd.Flags().BoolVar(&cfgACME, "acme", false, "Append Let's Encrypt ACME config to traefik.yaml")
 	configCmd.Flags().StringVar(&cfgACMEEmail, "acme-email", "", "Email for Let's Encrypt (required with --acme)")
+	configCmd.Flags().BoolVar(&cfgValidate, "validate", false, "Validate the static config (alias for 'traefikctl validate')")
 	rootCmd.AddCommand(configCmd)
 }
 
 func runConfig(cmd *cobra.Command, args []string) error {
+	if cfgValidate {
+		return runValidateFile(defaultStaticConfigPath, false)
+	}
+
 	if cfgACME {
+		if err := requireRoot(); err != nil {
+			return err
+		}
 		return appendACMEConfig(cfgACMEEmail)
 	}
 
@@ -64,14 +77,21 @@ func runConfig(cmd *cobra.Command, args []string) error {
 	}
 
 	if cfgGenerate {
-		return generateConfigs()
+		if err := requireRoot(); err != nil {
+			return err
+		}
+		return generateConfigs(cfgForce)
 	}
 
 	return viewConfigs()
 }
 
-func generateConfigs() error {
-	staticPath := "/etc/traefik/traefik.yaml"
+// generateConfigs writes the static config and an example dynamic config.
+// force controls whether existing files are overwritten; it is a parameter
+// rather than reading the cfgGenerate flag global so callers like `setup`
+// can invoke it without cobra flag state.
+func generateConfigs(force bool) error {
+	staticPath := defaultStaticConfigPath
 	dynamicDir := "/etc/traefik/dynamic"
 	examplePath := filepath.Join(dynamicDir, "example.yaml")
 
@@ -81,12 +101,12 @@ func generateConfigs() error {
 	}
 
 	// Write static config
-	if err := writeConfigFile(staticPath, traefik.DefaultStaticConfig, "Static config"); err != nil {
+	if err := writeConfigFile(staticPath, traefik.DefaultStaticConfig, "Static config", force); err != nil {
 		return err
 	}
 
 	// Write example dynamic config
-	if err := writeConfigFile(examplePath, traefik.DefaultDynamicExample, "Example dynamic config"); err != nil {
+	if err := writeConfigFile(examplePath, traefik.DefaultDynamicExample, "Example dynamic config", force); err != nil {
 		return err
 	}
 
@@ -98,16 +118,16 @@ func generateConfigs() error {
 	return nil
 }
 
-func writeConfigFile(path, content, desc string) error {
+func writeConfigFile(path, content, desc string, force bool) error {
 	_, err := os.Stat(path)
 	exists := err == nil
 
-	if exists && !cfgForce {
+	if exists && !force {
 		logger.Info("%s already exists: %s (skipped, use --force to overwrite)", desc, path)
 		return nil
 	}
 
-	if exists && cfgForce {
+	if exists && force {
 		logger.Info("Overwriting %s: %s", desc, path)
 	}
 
@@ -120,7 +140,7 @@ func writeConfigFile(path, content, desc string) error {
 }
 
 func viewConfigs() error {
-	staticPath := "/etc/traefik/traefik.yaml"
+	staticPath := defaultStaticConfigPath
 	dynamicDir := "/etc/traefik/dynamic"
 
 	fmt.Printf("=== Static Config: %s ===\n\n", staticPath)
@@ -208,7 +228,7 @@ func appendACMEConfig(email string) error {
 		return fmt.Errorf("--acme-email is required with --acme")
 	}
 
-	staticPath := "/etc/traefik/traefik.yaml"
+	staticPath := defaultStaticConfigPath
 	acmePath := "/etc/traefik/acme.json"
 
 	existing, readErr := os.ReadFile(staticPath)
@@ -244,7 +264,7 @@ func appendACMEConfig(email string) error {
 
 func permissionHint(action, path string, err error) error {
 	if os.IsPermission(err) {
-		return fmt.Errorf("permission denied: cannot %s at %s\n  Run with sudo: sudo traefikctl config --generate", action, path)
+		return fmt.Errorf("permission denied: cannot %s at %s\n  Run with sudo: sudo %s", action, path, commandLine())
 	}
 	return fmt.Errorf("failed to %s: %w", action, err)
 }

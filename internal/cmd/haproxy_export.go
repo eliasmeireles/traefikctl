@@ -419,6 +419,10 @@ func init() {
 }
 
 func runHAProxyExport(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	text, err := readHAProxyInput(haproxyExportFile, haproxyExportBase64)
 	if err != nil {
 		return err

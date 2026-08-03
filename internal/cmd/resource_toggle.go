@@ -54,6 +54,10 @@ func init() {
 }
 
 func runResourceDisable(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	filePath, err := selectDynamicFile(disableFile)
 	if err != nil {
 		return err
@@ -69,6 +73,10 @@ func runResourceDisable(cmd *cobra.Command, args []string) error {
 }
 
 func runResourceEnable(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	files, err := listDynamicFiles()
 	if err != nil {
 		return err

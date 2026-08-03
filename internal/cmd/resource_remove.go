@@ -38,6 +38,10 @@ func init() {
 }
 
 func runResourceRemove(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	filePath, err := selectDynamicFile(removeFile)
 	if err != nil {
 		return err
