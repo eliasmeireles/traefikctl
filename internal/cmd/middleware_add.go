@@ -46,6 +46,10 @@ func init() {
 }
 
 func runMiddlewareAdd(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	filePath, err := selectDynamicFile(mwAddFile)
 	if err != nil {
 		return err

@@ -22,6 +22,14 @@ func TestServiceCommandsRegistered(t *testing.T) {
 	})
 }
 
+func TestServiceRestartFlags(t *testing.T) {
+	t.Run("must expose skip-validate, no-wait and wait flags so an operator can bypass safety in an emergency", func(t *testing.T) {
+		assert.NotNil(t, serviceRestartCmd.Flags().Lookup("skip-validate"))
+		assert.NotNil(t, serviceRestartCmd.Flags().Lookup("no-wait"))
+		assert.NotNil(t, serviceRestartCmd.Flags().Lookup("wait"))
+	})
+}
+
 func TestDefaultServiceTemplate(t *testing.T) {
 	t.Run("must declare LogsDirectory so /var/log/traefik is recreated with traefik:traefik on every start", func(t *testing.T) {
 		assert.Contains(t, defaultServiceTemplate, "LogsDirectory=traefik")

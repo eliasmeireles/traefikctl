@@ -1,14 +1,17 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/eliasmeireles/traefikctl/internal/logger"
 	"github.com/eliasmeireles/traefikctl/internal/traefik"
+	"github.com/eliasmeireles/traefikctl/internal/validate"
 )
 
 // defaultServiceTemplate uses systemd's LogsDirectory= directive so /var/log/traefik
@@ -65,6 +68,10 @@ var (
 	serviceName   string
 	svcLogsFollow bool
 	svcLogsLines  int
+
+	svcRestartSkipValidate bool
+	svcRestartNoWait       bool
+	svcRestartWait         time.Duration
 )
 
 var serviceCmd = &cobra.Command{
@@ -107,9 +114,22 @@ var serviceRestartCmd = &cobra.Command{
 	RunE:         runServiceRestart,
 }
 
+var svcReloadRestart bool
+
 var serviceReloadCmd = &cobra.Command{
-	Use:          "reload",
-	Short:        "Reload Traefik config without full restart (systemctl reload)",
+	Use:   "reload",
+	Short: "Explain how Traefik picks up config changes (does not actually reload)",
+	Long: `Traefik has no config-reload signal: the systemd unit defines no
+ExecReload=, so 'systemctl reload traefikctl' always fails. This command is
+informational rather than an alias for that failing call — running it
+used to look like a successful hot reload while silently doing nothing.
+
+Dynamic config (routers, services, middlewares under /etc/traefik/dynamic/)
+is picked up automatically by Traefik's file watcher — no action needed.
+
+Static config (/etc/traefik/traefik.yaml) always requires a real restart.
+Use --restart to do that now, or run 'traefikctl service restart' directly.`,
+	Deprecated:   "does not reload Traefik; kept as an explanation, not an action. Use 'traefikctl service restart' for static config changes.",
 	SilenceUsage: true,
 	RunE:         runServiceReload,
 }
@@ -123,7 +143,11 @@ func init() {
 	serviceLogsCmd.Flags().IntVarP(&svcLogsLines, "lines", "n", 50, "Number of lines to show")
 
 	serviceRestartCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
+	serviceRestartCmd.Flags().BoolVar(&svcRestartSkipValidate, "skip-validate", false, "Skip static config validation before restarting")
+	serviceRestartCmd.Flags().BoolVar(&svcRestartNoWait, "no-wait", false, "Restart and return immediately, without confirming the service stayed up")
+	serviceRestartCmd.Flags().DurationVar(&svcRestartWait, "wait", DefaultRestartWait, "How long to wait for the service to stabilize after restart")
 	serviceReloadCmd.Flags().StringVar(&serviceName, "name", "traefikctl", "Service name")
+	serviceReloadCmd.Flags().BoolVar(&svcReloadRestart, "restart", false, "Actually restart the service now (equivalent to 'service restart')")
 	serviceCmd.AddCommand(serviceInstallCmd)
 	serviceCmd.AddCommand(serviceUninstallCmd)
 	serviceCmd.AddCommand(serviceStatusCmd)
@@ -134,6 +158,10 @@ func init() {
 }
 
 func runServiceInstall(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	systemdPath := fmt.Sprintf("/etc/systemd/system/%s.service", serviceName)
 
 	installer := traefik.NewInstaller()
@@ -167,6 +195,10 @@ func runServiceInstall(cmd *cobra.Command, args []string) error {
 }
 
 func runServiceUninstall(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	_ = systemctl("stop", serviceName)
 	_ = systemctl("disable", serviceName)
 
@@ -197,18 +229,61 @@ func runServiceLogs(cmd *cobra.Command, args []string) error {
 }
 
 func runServiceRestart(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
+	if !svcRestartSkipValidate {
+		if err := refuseIfConfigInvalid(); err != nil {
+			return err
+		}
+	}
+
 	if err := systemctl("restart", serviceName); err != nil {
 		return fmt.Errorf("failed to restart service: %w", err)
 	}
-	logger.Info("Service '%s' restarted", serviceName)
+
+	if svcRestartNoWait {
+		logger.Warn("Service '%s' restart issued but NOT confirmed (--no-wait) — it may still be crash-looping", serviceName)
+		return nil
+	}
+
+	state, err := waitHealthy(serviceName, svcRestartWait, DefaultSettle)
+	if err != nil {
+		logger.Error("Service '%s' did not come up healthy after restart: %v", serviceName, err)
+		logger.Info("Last journal lines:")
+		_ = journalctlLogs(serviceName, false, 50)
+		return fmt.Errorf("service '%s' failed to stabilize after restart: %w", serviceName, err)
+	}
+
+	logger.Info("Service '%s' restarted and stable (%s/%s)", serviceName, state.ActiveState, state.SubState)
 	return nil
 }
 
-func runServiceReload(cmd *cobra.Command, args []string) error {
-	if err := systemctl("reload", serviceName); err != nil {
-		return fmt.Errorf("failed to reload service (not all services support reload): %w", err)
+// refuseIfConfigInvalid validates the static config and, if it has
+// problems, prints the full report and returns an error instead of letting
+// the caller restart into a crash-loop.
+func refuseIfConfigInvalid() error {
+	result, err := validate.StaticFile(context.Background(), defaultStaticConfigPath, validate.Options{})
+	if err != nil {
+		return fmt.Errorf("failed to validate %s before restart: %w", defaultStaticConfigPath, err)
 	}
-	logger.Info("Service '%s' config reloaded", serviceName)
+	if result.Skipped || result.OK() {
+		return nil
+	}
+
+	fmt.Print(result.String())
+	return fmt.Errorf("refusing to restart: %d problem(s) found in %s (fix them, or pass --skip-validate to restart anyway)", len(result.Errors()), defaultStaticConfigPath)
+}
+
+func runServiceReload(cmd *cobra.Command, args []string) error {
+	if svcReloadRestart {
+		return runServiceRestart(cmd, args)
+	}
+
+	logger.Info("Dynamic config (routers/services/middlewares) reloads automatically — no action needed.")
+	logger.Info("Static config (%s) requires a real restart:", defaultStaticConfigPath)
+	logger.Info("  sudo traefikctl service reload --restart   (or: sudo traefikctl service restart)")
 	return nil
 }
 

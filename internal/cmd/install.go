@@ -52,6 +52,10 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return runInstallCheck(installer)
 	}
 
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	version, err := resolveTraefikVersion(installer, installVersion)
 	if err != nil {
 		return err
@@ -113,11 +117,11 @@ func runInstallSetup(installer *traefik.Installer) error {
 	logger.Info("\n=== Setting up system ===")
 
 	if err := installer.EnsureUser(); err != nil {
-		logger.Error("Failed to create system user: %v", err)
+		return fmt.Errorf("failed to create system user: %w", err)
 	}
 
 	if err := installer.EnsureDirectories(); err != nil {
-		logger.Error("Failed to create directories: %v", err)
+		return fmt.Errorf("failed to create directories: %w", err)
 	}
 	return nil
 }

@@ -48,6 +48,10 @@ func init() {
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	version := updateVersion
 
 	if version == "" {

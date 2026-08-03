@@ -45,6 +45,10 @@ func init() {
 }
 
 func runResourceCopy(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	srcFile, err := selectDynamicFile(copySrcFile)
 	if err != nil {
 		return err

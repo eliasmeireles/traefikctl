@@ -57,6 +57,10 @@ func init() {
 }
 
 func runResourceAdd(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	var filePath string
 	var cfg *DynamicConfig
 	var err error

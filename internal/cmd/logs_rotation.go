@@ -119,6 +119,10 @@ const logrotateTpl = `# Managed by traefikctl. Do not edit by hand.
 `
 
 func runRotationInstall(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	if _, err := parseSize(rotationMaxSize); err != nil {
 		return fmt.Errorf("invalid --max-size %q: %w", rotationMaxSize, err)
 	}
@@ -194,6 +198,10 @@ func installLogrotate() error {
 }
 
 func runRotationUninstall(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	var firstErr error
 
 	_ = systemctl("disable", "--now", rotationTimerUnit)

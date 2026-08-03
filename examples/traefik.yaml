@@ -65,6 +65,7 @@ providers:
 # TIMEOUTS
 # ============================================================================
 serversTransport:
-  dialTimeout: 5s
-  responseHeaderTimeout: 50s
-  idleConnTimeout: 50s
+  forwardingTimeouts:
+    dialTimeout: 5s
+    responseHeaderTimeout: 50s
+    idleConnTimeout: 50s

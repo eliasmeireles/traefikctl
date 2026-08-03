@@ -42,6 +42,10 @@ func init() {
 }
 
 func runResourceUpdate(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	if updateAddress == "" && updateDomain == "" {
 		return fmt.Errorf("must specify --address or --domain (or both)")
 	}

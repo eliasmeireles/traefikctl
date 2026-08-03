@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/eliasmeireles/traefikctl/internal/logger"
+	"github.com/eliasmeireles/traefikctl/internal/validate"
 )
 
 var statusServiceName string
@@ -32,21 +34,64 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println("=== traefikctl Status ===")
 	fmt.Println()
 
-	printServiceState(statusServiceName)
+	healthy := printServiceState(statusServiceName)
+	configOK := printConfigState()
 	printTraefikVersion()
 	printRoutesSummary()
 
+	if !healthy || !configOK {
+		return fmt.Errorf("one or more problems found above")
+	}
 	return nil
 }
 
-func printServiceState(name string) {
-	out, err := exec.Command("systemctl", "is-active", name).Output()
-	state := strings.TrimSpace(string(out))
-	if err != nil || state != "active" {
-		fmt.Printf("  Service %-20s  %s\n", name, state)
-	} else {
-		fmt.Printf("  Service %-20s  %s\n", name, state)
+// printServiceState reports the unit's real state — distinguishing a
+// crash-loop from healthy — instead of a single systemctl is-active poll,
+// which can read "active" at the exact instant between two crashes on a
+// Restart=always unit.
+func printServiceState(name string) bool {
+	s, err := showUnit(name)
+	if err != nil {
+		fmt.Printf("  Service %-20s  unknown (%v)\n", name, err)
+		return false
 	}
+
+	if isCrashLooping(s) {
+		fmt.Printf("  Service %-20s  CRASH-LOOPING (%s/%s, %d restarts, last exit %d)\n",
+			name, s.ActiveState, s.SubState, s.NRestarts, s.ExecMainStatus)
+		fmt.Printf("      -> sudo traefikctl validate\n")
+		fmt.Printf("      -> traefikctl logs --service\n")
+		return false
+	}
+
+	if s.ActiveState != "active" {
+		fmt.Printf("  Service %-20s  %s/%s\n", name, s.ActiveState, s.SubState)
+		return false
+	}
+
+	fmt.Printf("  Service %-20s  %s/%s\n", name, s.ActiveState, s.SubState)
+	return true
+}
+
+// printConfigState runs the same validator used by `traefikctl validate`
+// and `check`, so status never reports "active" over a config that's one
+// restart away from crash-looping.
+func printConfigState() bool {
+	result, err := validate.StaticFile(context.Background(), defaultStaticConfigPath, validate.Options{})
+	if err != nil {
+		fmt.Printf("  Config  could not be validated: %v\n", err)
+		return false
+	}
+	if result.Skipped {
+		fmt.Printf("  Config  %s\n", result.SkipReason)
+		return true
+	}
+	if !result.OK() {
+		fmt.Printf("  Config  %d problem(s) — run 'traefikctl validate' for details\n", len(result.Errors()))
+		return false
+	}
+	fmt.Printf("  Config  OK\n")
+	return true
 }
 
 func printTraefikVersion() {

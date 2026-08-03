@@ -54,6 +54,10 @@ func init() {
 }
 
 func runLogsRotate(cmd *cobra.Command, args []string) error {
+	if err := requireRoot(); err != nil {
+		return err
+	}
+
 	maxBytes, err := parseSize(rotateMaxSize)
 	if err != nil {
 		return fmt.Errorf("invalid --max-size %q: %w", rotateMaxSize, err)
