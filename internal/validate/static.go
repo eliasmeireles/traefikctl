@@ -105,7 +105,7 @@ func StaticBytes(ctx context.Context, name string, content []byte, opts Options)
 		if err != nil {
 			return nil, fmt.Errorf("create scratch dir: %w", err)
 		}
-		defer os.RemoveAll(dir)
+		defer func() { _ = os.RemoveAll(dir) }()
 		scratchDir = dir
 	}
 	scratchPath := filepath.Join(scratchDir, "traefik.yaml")
@@ -193,13 +193,10 @@ func stripUnknownField(doc *yaml.Node, c classified, schema *Schema, result *Res
 	}
 
 	toRemove := unknown
-	certain := true
-	if len(occs) > 1 && len(known) == 0 {
-		// More than one place has this key name, and the schema couldn't
-		// clear any of them — we don't actually know which one Traefik
-		// meant, only that at least one of them is wrong.
-		certain = false
-	}
+	// certain is false only when more than one place has this key name and
+	// the schema couldn't clear any of them — we don't actually know which
+	// one Traefik meant, only that at least one of them is wrong.
+	certain := len(occs) <= 1 || len(known) > 0
 	if len(toRemove) == 0 {
 		// Schema insists every occurrence is valid, yet Traefik rejected
 		// the name — remove all of them and say so rather than loop
