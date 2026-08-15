@@ -17,15 +17,26 @@ func TestResolveTraefikVersion(t *testing.T) {
 		require.Equal(t, "v3.4.0", v)
 	})
 
-	t.Run("given default version then returns it verbatim", func(t *testing.T) {
-		v, err := resolveTraefikVersion(installer, traefik.DefaultVersion)
+	t.Run("given an older tag then returns it verbatim", func(t *testing.T) {
+		v, err := resolveTraefikVersion(installer, "v3.3.5")
 		require.NoError(t, err)
-		require.Equal(t, traefik.DefaultVersion, v)
+		require.Equal(t, "v3.3.5", v)
+	})
+}
+
+func TestInstallWithoutVersion(t *testing.T) {
+	t.Run("must refuse to install when no version was resolved", func(t *testing.T) {
+		err := traefik.NewInstaller().Install("")
+		require.Error(t, err)
+	})
+}
+
+func TestInstallVersionFlagDefault(t *testing.T) {
+	t.Run("must default install --version to latest so no stale release is pinned", func(t *testing.T) {
+		require.Equal(t, latestVersionAlias, installCmd.Flags().Lookup("version").DefValue)
 	})
 
-	t.Run("given empty value then returns empty (cobra default applies upstream)", func(t *testing.T) {
-		v, err := resolveTraefikVersion(installer, "")
-		require.NoError(t, err)
-		require.Equal(t, "", v)
+	t.Run("must default setup --version to latest so no stale release is pinned", func(t *testing.T) {
+		require.Equal(t, latestVersionAlias, setupCmd.Flags().Lookup("version").DefValue)
 	})
 }

@@ -15,20 +15,17 @@ sudo traefikctl install [flags]
 ## Examples
 
 ```bash
-# Install the default pinned version (when not yet installed)
+# Install the most recent release (resolved from the Traefik GitHub API)
 sudo traefikctl install
 
 # Install a specific version
 sudo traefikctl install --version v3.4.0
 
-# Install the most recent release (resolved from the Traefik GitHub API)
-sudo traefikctl install --version latest
+# Upgrade an existing installation to the most recent release
+sudo traefikctl install --upgrade
 
 # Upgrade an existing installation to a specific version
 sudo traefikctl install --upgrade --version v3.4.0
-
-# Upgrade to whatever the latest release is
-sudo traefikctl install --upgrade --version latest
 
 # Only check whether Traefik is installed
 traefikctl install --check
@@ -38,13 +35,15 @@ traefikctl install --check
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--version` | _(pinned default)_ | Traefik version to install (e.g. `v3.4.0` or `latest`) |
+| `--version` | `latest` | Traefik version to install (e.g. `v3.4.0`) |
 | `--upgrade` | `false` | Replace the existing Traefik binary with the requested version |
 | `--check` | `false` | Only check if Traefik is installed (does not download) |
 
-`--version latest` queries
+`latest` (the default) queries
 `https://api.github.com/repos/traefik/traefik/releases/latest` and uses
-the `tag_name` it returns.
+the `tag_name` it returns. If that request fails the command errors out
+instead of silently installing an older release — pass `--version vX.Y.Z`
+to install without network access to the API.
 
 ## Behavior
 

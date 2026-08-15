@@ -37,8 +37,8 @@ curl -fsSL https://raw.githubusercontent.com/eliasmeireles/traefikctl/main/insta
 ### Install Traefik binary
 
 ```bash
-sudo traefikctl install
-sudo traefikctl install --version v3.3.5   # specific version
+sudo traefikctl install                    # latest release
+sudo traefikctl install --version v3.4.0   # specific version
 traefikctl install --check                 # verify installed version
 ```
 
