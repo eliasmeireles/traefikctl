@@ -71,7 +71,7 @@ After installing traefikctl, install Traefik:
 traefikctl install
 
 # Install specific version
-traefikctl install --version v3.3.5
+traefikctl install --version v3.4.0
 
 # Check if already installed
 traefikctl install --check

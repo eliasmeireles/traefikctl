@@ -25,9 +25,9 @@ var installCmd = &cobra.Command{
 Supports amd64 and arm64 architectures.
 Requires root/sudo privileges.
 
-Use --version latest to fetch the most recent release from the
-Traefik GitHub API. Use --upgrade to replace an existing binary
-with the requested version.
+Without --version the most recent release is fetched from the Traefik
+GitHub API. Pass --version vX.Y.Z to pin a specific one. Use --upgrade
+to replace an existing binary with the requested version.
 
 This command will:
 1. Download Traefik binary to /usr/local/bin/traefik
@@ -40,7 +40,7 @@ This command will:
 
 func init() {
 	installCmd.Flags().BoolVar(&checkOnly, "check", false, "Only check if Traefik is installed")
-	installCmd.Flags().StringVar(&installVersion, "version", traefik.DefaultVersion, "Traefik version to install (e.g. v3.4.0 or 'latest')")
+	installCmd.Flags().StringVar(&installVersion, "version", latestVersionAlias, "Traefik version to install (e.g. v3.4.0); defaults to the latest release")
 	installCmd.Flags().BoolVar(&installUpgrade, "upgrade", false, "Replace the existing Traefik binary with the requested version")
 	rootCmd.AddCommand(installCmd)
 }
@@ -126,16 +126,19 @@ func runInstallSetup(installer *traefik.Installer) error {
 	return nil
 }
 
-// resolveTraefikVersion expands the "latest" alias by querying the GitHub
-// API. Any other value is returned verbatim (cobra applies the default).
+// resolveTraefikVersion expands the "latest" alias — the default when no
+// --version is given — by querying the GitHub API. An empty value means the
+// same thing, so an unset flag never falls back to a stale pinned release.
+// Any other value is returned verbatim.
 func resolveTraefikVersion(installer *traefik.Installer, requested string) (string, error) {
-	if !strings.EqualFold(requested, latestVersionAlias) {
+	if requested != "" && !strings.EqualFold(requested, latestVersionAlias) {
 		return requested, nil
 	}
 	logger.Info("Fetching latest Traefik version...")
 	v, err := installer.LatestVersion()
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve latest version: %w", err)
+		return "", fmt.Errorf(
+			"failed to resolve latest version: %w (pass --version vX.Y.Z to install a specific release)", err)
 	}
 	logger.Info("Latest Traefik version: %s", v)
 	return v, nil

@@ -62,7 +62,7 @@ traefik.yaml is caught here instead of crash-looping afterward.`,
 func init() {
 	setupCmd.Flags().BoolVarP(&setupYes, "yes", "y", false, "Don't prompt for confirmation")
 	setupCmd.Flags().BoolVar(&setupDryRun, "dry-run", false, "Print what would happen without changing anything")
-	setupCmd.Flags().StringVar(&setupVersion, "version", traefik.DefaultVersion, "Traefik version to install (e.g. v3.4.0 or 'latest')")
+	setupCmd.Flags().StringVar(&setupVersion, "version", latestVersionAlias, "Traefik version to install (e.g. v3.4.0); defaults to the latest release")
 	setupCmd.Flags().StringVar(&setupACMEEmail, "acme-email", "", "Enable Let's Encrypt ACME with this contact email")
 	setupCmd.Flags().BoolVar(&setupSkipRotation, "skip-rotation", false, "Don't install log rotation")
 	setupCmd.Flags().BoolVar(&setupNoStart, "no-start", false, "Do everything except starting/restarting the service")

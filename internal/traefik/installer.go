@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	DefaultVersion  = "v3.3.5"
+	// No Traefik version is pinned anywhere: callers resolve "latest" from
+	// the GitHub API, so a new release is picked up without a code change.
 	BinaryPath      = "/usr/local/bin/traefik"
 	ACMEStorePath   = "/etc/traefik/acme.json"
 	DownloadURLBase = "https://github.com/traefik/traefik/releases/download"
@@ -78,7 +79,7 @@ func (i *Installer) Install(version string) error {
 	}
 
 	if version == "" {
-		version = DefaultVersion
+		return fmt.Errorf("no Traefik version resolved — expected a tag such as v3.7.10")
 	}
 
 	arch := runtime.GOARCH
