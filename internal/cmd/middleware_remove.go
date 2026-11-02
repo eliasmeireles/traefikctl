@@ -7,8 +7,9 @@ import (
 )
 
 var (
-	mwRemoveName string
-	mwRemoveFile string
+	mwRemoveProtocol string
+	mwRemoveName     string
+	mwRemoveFile     string
 )
 
 var middlewareRemoveCmd = &cobra.Command{
@@ -19,6 +20,7 @@ var middlewareRemoveCmd = &cobra.Command{
 }
 
 func init() {
+	middlewareRemoveCmd.Flags().StringVar(&mwRemoveProtocol, "protocol", "", "Middleware protocol: http or tcp (auto-detected if unambiguous)")
 	middlewareRemoveCmd.Flags().StringVar(&mwRemoveName, "name", "", "Middleware name")
 	middlewareRemoveCmd.Flags().StringVar(&mwRemoveFile, "file", "", "Dynamic config file")
 	_ = middlewareRemoveCmd.MarkFlagRequired("name")
@@ -36,7 +38,7 @@ func runMiddlewareRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := removeMiddleware(mwRemoveName, filePath); err != nil {
+	if err := removeMiddlewareForProtocol(mwRemoveName, mwRemoveProtocol, filePath); err != nil {
 		return err
 	}
 

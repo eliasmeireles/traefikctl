@@ -21,7 +21,8 @@ Middlewares are processing steps that can modify requests/responses before they 
 | `basic-auth` | Basic authentication |
 | `strip-prefix` | Remove path prefixes |
 | `add-prefix` | Add path prefix |
-| `ip-whitelist` | IP allowlist |
+| `ip-allowlist` | HTTP/TCP IP allowlist (Traefik v3) |
+| `ip-whitelist` | Deprecated HTTP legacy alias (`ipWhiteList`) |
 | `headers` | Custom headers |
 
 ## Subcommands

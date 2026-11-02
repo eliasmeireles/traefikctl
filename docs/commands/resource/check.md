@@ -79,3 +79,6 @@ done
 # Fail if any backend is down
 traefikctl resource check || exit 1
 ```
+
+Routes whose backend is defined in another dynamic file are reported as `[SKIP]`
+with no error; their address is not checked through that reference.

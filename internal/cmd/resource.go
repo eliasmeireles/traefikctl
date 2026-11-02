@@ -42,8 +42,9 @@ type HTTPConfig struct {
 }
 
 type TCPConfig struct {
-	Routers  map[string]*TCPRouter  `yaml:"routers,omitempty"`
-	Services map[string]*TCPService `yaml:"services,omitempty"`
+	Routers     map[string]*TCPRouter        `yaml:"routers,omitempty"`
+	Services    map[string]*TCPService       `yaml:"services,omitempty"`
+	Middlewares map[string]*MiddlewareConfig `yaml:"middlewares,omitempty"`
 }
 
 // RouterTLS configures TLS for an HTTP router.
@@ -77,6 +78,8 @@ type TCPRouter struct {
 	EntryPoints []string `yaml:"entryPoints"`
 	Service     string   `yaml:"service"`
 	TLS         *TLSConf `yaml:"tls,omitempty"`
+	Middlewares []string `yaml:"middlewares,omitempty"`
+	Priority    int      `yaml:"priority,omitempty"`
 }
 
 type TLSConf struct {
@@ -97,11 +100,18 @@ type ServerAddress struct {
 
 // MiddlewareConfig mirrors Traefik v3 dynamic config middleware structure.
 type MiddlewareConfig struct {
+	IPAllowList    *IPAllowList    `yaml:"ipAllowList,omitempty"`
+	IPWhiteList    *IPAllowList    `yaml:"ipWhiteList,omitempty"`
 	RedirectScheme *RedirectScheme `yaml:"redirectScheme,omitempty"`
 	BasicAuth      *BasicAuth      `yaml:"basicAuth,omitempty"`
 	RateLimit      *RateLimit      `yaml:"rateLimit,omitempty"`
 	StripPrefix    *StripPrefix    `yaml:"stripPrefix,omitempty"`
 	Headers        *Headers        `yaml:"headers,omitempty"`
+}
+
+// IPAllowList restricts clients to the supplied IP addresses and CIDR ranges.
+type IPAllowList struct {
+	SourceRange []string `yaml:"sourceRange"`
 }
 
 type RedirectScheme struct {

@@ -43,18 +43,15 @@ func init() {
 }
 
 func runResourceCheck(cmd *cobra.Command, args []string) error {
-	files, err := listDynamicFiles()
-	if err != nil {
-		return err
-	}
-
-	if len(files) == 0 {
-		logger.Info("No dynamic config files found in %s", defaultDynamicDir)
-		return nil
-	}
-
+	var files []string
 	if checkFile != "" {
 		files = []string{checkFile}
+	} else {
+		var err error
+		files, err = listDynamicFiles()
+		if err != nil {
+			return err
+		}
 	}
 
 	timeout := time.Duration(checkTimeout) * time.Second
@@ -75,7 +72,7 @@ func runResourceCheck(cmd *cobra.Command, args []string) error {
 
 				svc := cfg.HTTP.Services[cfg.HTTP.Routers[name].Service]
 				if svc == nil || svc.LoadBalancer == nil || len(svc.LoadBalancer.Servers) == 0 {
-					fmt.Printf("  [SKIP] %s: no backend configured\n", name)
+					fmt.Printf("  [SKIP] %s: no local backend configured (service may be in another dynamic file)\n", name)
 					continue
 				}
 
@@ -99,7 +96,7 @@ func runResourceCheck(cmd *cobra.Command, args []string) error {
 
 				svc := cfg.TCP.Services[cfg.TCP.Routers[name].Service]
 				if svc == nil || svc.LoadBalancer == nil || len(svc.LoadBalancer.Servers) == 0 {
-					fmt.Printf("  [SKIP] %s: no backend configured\n", name)
+					fmt.Printf("  [SKIP] %s: no local backend configured (service may be in another dynamic file)\n", name)
 					continue
 				}
 

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -71,6 +72,9 @@ func TestAddHTTPResourceWithRedirectHTTPS(t *testing.T) {
 
 // setupAddFlags resets the package-level add vars to known values for testing.
 func setupAddFlags(name, address, domain, entrypoint string) {
+	addService = ""
+	addPriority = 0
+	addPassthrough = false
 	addName = name
 	addAddress = address
 	addDomain = domain
@@ -80,4 +84,46 @@ func setupAddFlags(name, address, domain, entrypoint string) {
 	addRedirectHTTPS = false
 	addTLS = false
 	addCertResolver = ""
+}
+
+func TestAddTCPResource(t *testing.T) {
+	t.Cleanup(func() { setupAddFlags("", "", "", "web") })
+	for _, tc := range []struct{ title, domain, rule string }{
+		{"must_keep_default_wildcard_without_tls", "", "HostSNI(`*`)"},
+		{"must_match_one_domain", "a.example.com", "HostSNI(`a.example.com`)"},
+		{"must_match_many_domains", "a.example.com,b.example.com", "HostSNI(`a.example.com`) || HostSNI(`b.example.com`)"},
+	} {
+		t.Run(tc.title, func(t *testing.T) {
+			setupAddFlags("database", "192.0.2.1:5432", tc.domain, "database")
+			cfg := &DynamicConfig{}
+			require.NoError(t, addTCPResource(cfg, filepath.Join(t.TempDir(), "routes.yaml")))
+			require.Equal(t, tc.rule, cfg.TCP.Routers["database"].Rule)
+			require.Equal(t, tc.domain != "", cfg.TCP.Routers["database"].TLS != nil)
+		})
+	}
+}
+
+func TestTCPVPNGolden(t *testing.T) {
+	t.Cleanup(func() { setupAddFlags("", "", "", "web") })
+	dir := t.TempDir()
+	file := filepath.Join(dir, "vpn.yaml")
+	require.NoError(t, saveDynamicConfig(filepath.Join(dir, "services.yaml"), &DynamicConfig{TCP: &TCPConfig{Services: map[string]*TCPService{
+		"shared-https": {LoadBalancer: &TCPLoadBalancer{Servers: []ServerAddress{{Address: "192.0.2.1:443"}}}},
+	}}}))
+	require.NoError(t, addMiddlewareForProtocol("vpn-only", "ip-allowlist", "tcp", map[string]string{"sourcerange": "10.99.0.0/24"}, file))
+	cfg, err := loadDynamicConfig(file)
+	require.NoError(t, err)
+	setupAddFlags("admin-vpn", "", "admin.example.com", "websecure")
+	addPassthrough = true
+	addPriority = 100
+	addService = "shared-https"
+	addMiddlewares = []string{"vpn-only"}
+	require.NoError(t, addTCPResource(cfg, file))
+	actual, err := os.ReadFile(file)
+	require.NoError(t, err)
+	golden, err := os.ReadFile("testdata/tcp-vpn.yaml")
+	require.NoError(t, err)
+	require.YAMLEq(t, string(golden), string(actual))
+	require.Empty(t, cfg.TCP.Services)
+	require.ErrorContains(t, addTCPResource(cfg, file), "already exists")
 }

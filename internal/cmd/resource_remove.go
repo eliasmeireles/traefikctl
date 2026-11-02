@@ -63,13 +63,15 @@ func runResourceRemove(cmd *cobra.Command, args []string) error {
 				svcName = router.Service
 			}
 			delete(cfg.HTTP.Routers, removeName)
-			delete(cfg.HTTP.Services, svcName)
+			if svcName == removeName+"-svc" {
+				delete(cfg.HTTP.Services, svcName)
+			}
 			logger.Info("Removed HTTP router '%s' and service '%s'", removeName, svcName)
 			found = true
 		}
 
 		// Clean up empty HTTP section
-		if len(cfg.HTTP.Routers) == 0 && len(cfg.HTTP.Services) == 0 {
+		if len(cfg.HTTP.Routers) == 0 && len(cfg.HTTP.Services) == 0 && len(cfg.HTTP.Middlewares) == 0 {
 			cfg.HTTP = nil
 		}
 	}
@@ -81,12 +83,14 @@ func runResourceRemove(cmd *cobra.Command, args []string) error {
 				svcName = router.Service
 			}
 			delete(cfg.TCP.Routers, removeName)
-			delete(cfg.TCP.Services, svcName)
+			if svcName == removeName+"-svc" {
+				delete(cfg.TCP.Services, svcName)
+			}
 			logger.Info("Removed TCP router '%s' and service '%s'", removeName, svcName)
 			found = true
 		}
 
-		if len(cfg.TCP.Routers) == 0 && len(cfg.TCP.Services) == 0 {
+		if len(cfg.TCP.Routers) == 0 && len(cfg.TCP.Services) == 0 && len(cfg.TCP.Middlewares) == 0 {
 			cfg.TCP = nil
 		}
 	}

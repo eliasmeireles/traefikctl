@@ -10,6 +10,8 @@ import (
 	"github.com/eliasmeireles/traefikctl/internal/logger"
 )
 
+var resourceListFile string
+
 var resourceListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all configured routers and services",
@@ -22,13 +24,20 @@ Example:
 }
 
 func init() {
+	resourceListCmd.Flags().StringVar(&resourceListFile, "file", "", "List only this dynamic file")
 	resourceCmd.AddCommand(resourceListCmd)
 }
 
 func runResourceList(cmd *cobra.Command, args []string) error {
-	files, err := listDynamicFiles()
-	if err != nil {
-		return err
+	var files []string
+	if resourceListFile != "" {
+		files = []string{resourceListFile}
+	} else {
+		var err error
+		files, err = listDynamicFiles()
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(files) == 0 {
@@ -60,7 +69,10 @@ func runResourceList(cmd *cobra.Command, args []string) error {
 			for _, name := range sortedTCPRouterKeys(cfg.TCP.Routers) {
 				router := cfg.TCP.Routers[name]
 				backend := backendAddress(cfg.TCP.Services[router.Service])
-				fmt.Printf("  [TCP]  %-25s  %-50s  -> %s\n", name, router.Rule, backend)
+				if backend == "<no backend>" {
+					backend = "service:" + router.Service
+				}
+				fmt.Printf("  [TCP]  %-25s  %-50s  -> %s  passthrough=%v  middlewares=%v\n", name, router.Rule, backend, router.TLS != nil && router.TLS.Passthrough, router.Middlewares)
 				total++
 			}
 		}

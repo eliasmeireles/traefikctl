@@ -120,12 +120,12 @@ func disableRouter(name, activeFile, dDir string) error {
 				Services: map[string]*Service{},
 			}
 			svcName := cfg.HTTP.Routers[name].Service
-			if svc, ok := cfg.HTTP.Services[svcName]; ok {
+			if svc, ok := cfg.HTTP.Services[svcName]; ok && svcName == name+"-svc" {
 				snapshot.HTTP.Services[svcName] = svc
 				delete(cfg.HTTP.Services, svcName)
 			}
 			delete(cfg.HTTP.Routers, name)
-			if len(cfg.HTTP.Routers) == 0 && len(cfg.HTTP.Services) == 0 {
+			if len(cfg.HTTP.Routers) == 0 && len(cfg.HTTP.Services) == 0 && len(cfg.HTTP.Middlewares) == 0 {
 				cfg.HTTP = nil
 			}
 			found = true
@@ -139,12 +139,12 @@ func disableRouter(name, activeFile, dDir string) error {
 				Services: map[string]*TCPService{},
 			}
 			svcName := cfg.TCP.Routers[name].Service
-			if svc, ok := cfg.TCP.Services[svcName]; ok {
+			if svc, ok := cfg.TCP.Services[svcName]; ok && svcName == name+"-svc" {
 				snapshot.TCP.Services[svcName] = svc
 				delete(cfg.TCP.Services, svcName)
 			}
 			delete(cfg.TCP.Routers, name)
-			if len(cfg.TCP.Routers) == 0 && len(cfg.TCP.Services) == 0 {
+			if len(cfg.TCP.Routers) == 0 && len(cfg.TCP.Services) == 0 && len(cfg.TCP.Middlewares) == 0 {
 				cfg.TCP = nil
 			}
 			found = true
@@ -189,6 +189,12 @@ func enableRouter(name, targetFile, dDir string) error {
 		if cfg.HTTP == nil {
 			cfg.HTTP = &HTTPConfig{Routers: map[string]*Router{}, Services: map[string]*Service{}}
 		}
+		if cfg.HTTP.Routers == nil {
+			cfg.HTTP.Routers = map[string]*Router{}
+		}
+		if cfg.HTTP.Services == nil {
+			cfg.HTTP.Services = map[string]*Service{}
+		}
 		for k, v := range snapshot.HTTP.Routers {
 			cfg.HTTP.Routers[k] = v
 		}
@@ -200,6 +206,12 @@ func enableRouter(name, targetFile, dDir string) error {
 	if snapshot.TCP != nil {
 		if cfg.TCP == nil {
 			cfg.TCP = &TCPConfig{Routers: map[string]*TCPRouter{}, Services: map[string]*TCPService{}}
+		}
+		if cfg.TCP.Routers == nil {
+			cfg.TCP.Routers = map[string]*TCPRouter{}
+		}
+		if cfg.TCP.Services == nil {
+			cfg.TCP.Services = map[string]*TCPService{}
 		}
 		for k, v := range snapshot.TCP.Routers {
 			cfg.TCP.Routers[k] = v

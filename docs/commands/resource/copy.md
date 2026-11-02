@@ -77,3 +77,28 @@ traefikctl resource copy --from api-v1 --name api-v2 \
 traefikctl resource copy --from app-us --name app-eu \
   --domain app.example.eu
 ```
+
+## TCP routes and shared services
+
+TCP routes support repeated or comma-separated `--domain` values, producing
+`HostSNI` rules. Omitting the flag preserves the existing rule. TLS, middleware
+references and priority are preserved when copying.
+
+Additional options: `--type http|tcp` checks the existing router type;
+`--entrypoint`, `--middleware` (repeatable or comma-separated), `--priority` and
+`--passthrough` replace those settings. Explicit `--passthrough=false` disables
+passthrough; `--priority=0` resets priority; `--middleware=` clears references.
+Passthrough is TCP-only and requires a TLS entrypoint.
+
+`--service` selects a verified existing service instead of `--address`. The two
+flags are mutually exclusive. With neither flag, the existing backend is kept.
+Copying a local service creates a service with the new route name; copying a
+reference to a service in another file preserves the reference and verifies it
+in the destination directory. Updating an external service's address requires
+editing its owning file; the command reports an error instead of silently doing
+nothing.
+
+```bash
+traefikctl resource copy --from admin-vpn --name admin-staging --type tcp \
+  --domain admin.example.com --domain staging.example.com --passthrough --priority 100
+```

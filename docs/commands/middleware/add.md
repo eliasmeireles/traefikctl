@@ -93,10 +93,10 @@ http:
         prefix: /api/v2
 ```
 
-### IP Whitelist
+### IP Allowlist (HTTP and TCP)
 
 ```bash
-traefikctl middleware add --name internal-only --type ip-whitelist \
+traefikctl middleware add --name internal-only --type ip-allowlist \
   --opt sourcerange=192.168.1.0/24,10.0.0.0/8
 ```
 
@@ -104,7 +104,7 @@ traefikctl middleware add --name internal-only --type ip-whitelist \
 http:
   middlewares:
     internal-only:
-      ipWhiteList:
+      ipAllowList:
         sourceRange:
           - 192.168.1.0/24
           - 10.0.0.0/8
@@ -135,6 +135,7 @@ http:
 |------|----------|-------------|
 | `--name` | Yes | Middleware name |
 | `--type` | Yes | Middleware type |
+| `--protocol` | No | `http` (default) or `tcp` |
 | `--file` | No | Dynamic config file |
 | `--opt` | Varies | Options as `key=value` |
 
@@ -172,11 +173,11 @@ http:
 |--------|---------|-------------|
 | `prefix` | - | Path prefix to add |
 
-### ip-whitelist
+### ip-allowlist / ip-whitelist
 
 | Option | Required | Description |
 |--------|----------|-------------|
-| `sourcerange` | Yes | Comma-separated CIDR ranges |
+| `sourcerange` | Yes | Comma-separated CIDR ranges or individual IPv4/IPv6 addresses |
 
 ### headers
 
@@ -189,3 +190,47 @@ http:
 | `forceSTSHeader` | `false` | Force HSTS header |
 | `stsincludeSubdomains` | `false` | Include subdomains |
 | `stspreload` | `false` | HSTS preload |
+
+`ip-allowlist` writes Traefik v3 `ipAllowList` for HTTP and TCP. Invalid IPs and
+CIDRs are rejected. TCP supports only `ip-allowlist`; HTTP-only middleware types
+are rejected when `--protocol tcp` is specified.
+
+`ip-whitelist` is a deprecated HTTP compatibility alias. This command does not
+detect the running Traefik version, so it retains the legacy `ipWhiteList` YAML
+key. Use `ip-allowlist` with Traefik v3.
+
+## VPN-only TCP TLS passthrough
+
+Assume a TCP service named `shared-https` already exists in another YAML file
+in the same dynamic provider directory. Restrict the route to VPN clients:
+
+```bash
+sudo traefikctl middleware add --name vpn-only --type ip-allowlist --protocol tcp \
+  --opt sourcerange=10.99.0.0/24
+sudo traefikctl resource add --name admin-vpn --type tcp --domain admin.example.com \
+  --entrypoint websecure --passthrough --priority 100 --middleware vpn-only --service shared-https
+```
+
+The router and middleware may live in separate files. Together they produce:
+
+```yaml
+tcp:
+  routers:
+    admin-vpn:
+      rule: HostSNI(`admin.example.com`)
+      priority: 100
+      entryPoints: [websecure]
+      middlewares: [vpn-only]
+      service: shared-https
+      tls:
+        passthrough: true
+  middlewares:
+    vpn-only:
+      ipAllowList:
+        sourceRange: [10.99.0.0/24]
+```
+
+TLS remains encrypted until the backend, which supplies the certificate.
+The allowlist checks the connection's source IP; it must be visible to Traefik.
+`--service` validates the matching protocol's service in neighboring `.yaml` or
+`.yml` files and creates no service. Use `--file` to select the destination.
