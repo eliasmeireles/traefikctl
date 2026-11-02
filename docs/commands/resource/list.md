@@ -72,3 +72,6 @@ traefikctl resource list --format json
   ]
 }
 ```
+
+TCP rows include the full SNI rule, TLS passthrough state and middleware names.
+Services defined in another file appear as `service:<name>`.

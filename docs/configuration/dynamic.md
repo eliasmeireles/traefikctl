@@ -185,3 +185,39 @@ services:
 | `Method(\`GET\`)` | `http_request method GET` |
 | `Header(\`X-Api-Key\`, \`secret\`)` | `hdr(X-Api-Key) -i secret` |
 | `Query(\`foo=bar\`)` | `query string match` |
+
+## VPN-only TCP TLS passthrough
+
+Assume a TCP service named `shared-https` already exists in another YAML file
+in the same dynamic provider directory. Restrict the route to VPN clients:
+
+```bash
+sudo traefikctl middleware add --name vpn-only --type ip-allowlist --protocol tcp \
+  --opt sourcerange=10.99.0.0/24
+sudo traefikctl resource add --name admin-vpn --type tcp --domain admin.example.com \
+  --entrypoint websecure --passthrough --priority 100 --middleware vpn-only --service shared-https
+```
+
+The router and middleware may live in separate files. Together they produce:
+
+```yaml
+tcp:
+  routers:
+    admin-vpn:
+      rule: HostSNI(`admin.example.com`)
+      priority: 100
+      entryPoints: [websecure]
+      middlewares: [vpn-only]
+      service: shared-https
+      tls:
+        passthrough: true
+  middlewares:
+    vpn-only:
+      ipAllowList:
+        sourceRange: [10.99.0.0/24]
+```
+
+TLS remains encrypted until the backend, which supplies the certificate.
+The allowlist checks the connection's source IP; it must be visible to Traefik.
+`--service` validates the matching protocol's service in neighboring `.yaml` or
+`.yml` files and creates no service. Use `--file` to select the destination.

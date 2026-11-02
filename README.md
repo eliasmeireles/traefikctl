@@ -13,7 +13,7 @@ Traefik Control — A CLI tool for managing Traefik proxy configurations.
 - **Systemd Service**: Install, start, stop, restart, reload, and tail logs
 - **Route Management**: Add, list, check, copy, enable, disable HTTP and TCP routes
 - **Backend Management**: Add or remove upstream servers for load balancing
-- **Middleware Management**: Add, list, and remove middlewares (redirect-https, rate-limit, basic-auth, strip-prefix)
+- **Middleware Management**: Add, list, and remove HTTP/TCP middlewares, including IP allowlists
 - **HTTPS / Let's Encrypt**: One-command TLS and ACME configuration
 - **Status Dashboard**: Service state, Traefik version, and route count at a glance
 - **Self-Update**: Download and install the latest traefikctl release
@@ -157,14 +157,53 @@ sudo traefikctl resource add --name postgres --address 10.0.0.10:5432 --type tcp
 | Flag | Default | Description |
 |---|---|---|
 | `--name` | required | Router and service name |
-| `--address` | required | Backend address (`ip:port`) |
-| `--domain` | — | Host rule (`Host(\`...\`)`) |
+| `--address` | — | Backend address (`ip:port`); exactly one of address or service required |
+| `--service` | — | Existing service in the matching HTTP/TCP namespace |
+| `--domain` | — | Host / TCP HostSNI hostnames (repeatable or comma list) |
 | `--entrypoint` | `web` | Traefik entrypoint |
 | `--type` | `http` | `http` or `tcp` |
 | `--middleware` | — | Attach middleware(s) by name (repeatable) |
 | `--redirect-https` | false | Auto HTTP→HTTPS redirect |
 | `--tls` | false | Enable TLS on the router |
+| `--passthrough` | false | TCP only: forward TLS to the backend; requires explicit domain or `*` and a TLS entrypoint |
+| `--priority` | `0` | HTTP/TCP router priority |
 | `--cert-resolver` | — | Let's Encrypt resolver name |
+
+## VPN-only TCP TLS passthrough
+
+Assume a TCP service named `shared-https` already exists in another YAML file
+in the same dynamic provider directory. Restrict the route to VPN clients:
+
+```bash
+sudo traefikctl middleware add --name vpn-only --type ip-allowlist --protocol tcp \
+  --opt sourcerange=10.99.0.0/24
+sudo traefikctl resource add --name admin-vpn --type tcp --domain admin.example.com \
+  --entrypoint websecure --passthrough --priority 100 --middleware vpn-only --service shared-https
+```
+
+The router and middleware may live in separate files. Together they produce:
+
+```yaml
+tcp:
+  routers:
+    admin-vpn:
+      rule: HostSNI(`admin.example.com`)
+      priority: 100
+      entryPoints: [websecure]
+      middlewares: [vpn-only]
+      service: shared-https
+      tls:
+        passthrough: true
+  middlewares:
+    vpn-only:
+      ipAllowList:
+        sourceRange: [10.99.0.0/24]
+```
+
+TLS remains encrypted until the backend, which supplies the certificate.
+The allowlist checks the connection's source IP; it must be visible to Traefik.
+`--service` validates the matching protocol's service in neighboring `.yaml` or
+`.yml` files and creates no service. Use `--file` to select the destination.
 
 ### resource list
 

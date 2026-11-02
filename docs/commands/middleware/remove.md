@@ -1,51 +1,23 @@
 # middleware remove
 
-Remove a middleware.
-
-## Synopsis
+Remove an unreferenced HTTP or TCP middleware.
 
 ```bash
-traefikctl middleware remove [flags]
+sudo traefikctl middleware remove --name vpn-only --protocol tcp
+sudo traefikctl middleware remove --name old-auth --file /etc/traefik/dynamic/custom.yaml
 ```
-
-## Examples
-
-```bash
-# Remove by name
-traefikctl middleware remove --name rate-limit
-
-# Remove from specific file
-traefikctl middleware remove --name old-auth --file /etc/traefik/dynamic/custom.yaml
-```
-
-## Flags
 
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--name` | Yes | Middleware name |
 | `--file` | No | Dynamic config file |
+| `--protocol` | No | `http` or `tcp`; otherwise inferred from the file |
 
-## Safety Check
+Removal fails if routers in any YAML file in the selected directory still
+reference the middleware. The error lists their names. Both `vpn-only` and
+`vpn-only@file` references are checked in the matching protocol namespace.
+Remove those references with `resource update --middleware` before retrying;
+`--middleware=` clears all middleware references on that router.
 
-Before removal, traefikctl checks if the middleware is in use:
-
-```bash
-$ traefikctl middleware remove --name rate-limit
-
-⚠️  Warning: This middleware is used by:
-   - myapp
-   - api
-   
-Remove anyway? [y/N]
-```
-
-## Cascade Effects
-
-Removing a middleware affects all routes using it:
-
-| Route | Effect |
-|-------|--------|
-| Routes with single middleware | Middleware list becomes empty |
-| Routes with multiple middlewares | Other middlewares remain |
-
-After removal, manually update affected routes if needed.
+When a name exists in both HTTP and TCP, `--protocol` is required. Removal does
+not detach middleware from routers and has no force option.
