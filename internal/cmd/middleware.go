@@ -77,7 +77,7 @@ func buildMiddleware(mwType string, opts map[string]string) (*MiddlewareConfig, 
 	case "ip-allowlist", "ip-whitelist":
 		ranges := strings.Split(opts["sourcerange"], ",")
 		if opts["sourcerange"] == "" {
-			return nil, fmt.Errorf("%s requires --opt sourcerange=IP-or-CIDR,...", mwType)
+			return nil, fmt.Errorf("%s requires --opt sourcerange with comma-separated IPs or CIDRs", mwType)
 		}
 		for i, raw := range ranges {
 			source := strings.TrimSpace(raw)
