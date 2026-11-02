@@ -11,6 +11,9 @@ import (
 )
 
 var (
+	addService       string
+	addPassthrough   bool
+	addPriority      int
 	addDomain        string
 	addAddress       string
 	addName          string
@@ -39,7 +42,10 @@ Examples:
 }
 
 func init() {
-	resourceAddCmd.Flags().StringVar(&addDomain, "domain", "", "Domain for the router rule (e.g., app.example.com)")
+	resourceAddCmd.Flags().Var(domainFlag{&addDomain}, "domain", "Hostnames for the router rule (repeatable or comma-separated)")
+	resourceAddCmd.Flags().StringVar(&addService, "service", "", "Existing service name (instead of --address)")
+	resourceAddCmd.Flags().BoolVar(&addPassthrough, "passthrough", false, "Forward TCP TLS without termination")
+	resourceAddCmd.Flags().IntVar(&addPriority, "priority", 0, "Router priority")
 	resourceAddCmd.Flags().StringVar(&addAddress, "address", "", "Backend server address (ip:port)")
 	resourceAddCmd.Flags().StringVar(&addName, "name", "", "Router and service name")
 	resourceAddCmd.Flags().StringVar(&addEntrypoint, "entrypoint", "web", "Entrypoint name (default: web)")
@@ -50,7 +56,6 @@ func init() {
 	resourceAddCmd.Flags().BoolVar(&addTLS, "tls", false, "Enable TLS on the router")
 	resourceAddCmd.Flags().StringVar(&addCertResolver, "cert-resolver", "", "Let's Encrypt cert resolver name (e.g. letsencrypt)")
 
-	_ = resourceAddCmd.MarkFlagRequired("address")
 	_ = resourceAddCmd.MarkFlagRequired("name")
 
 	resourceCmd.AddCommand(resourceAddCmd)
@@ -61,6 +66,9 @@ func runResourceAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if addType != "http" && addType != "tcp" {
+		return fmt.Errorf("invalid --type %q: expected http or tcp", addType)
+	}
 	var filePath string
 	var cfg *DynamicConfig
 	var err error
@@ -100,6 +108,20 @@ func runResourceAdd(cmd *cobra.Command, args []string) error {
 }
 
 func addHTTPResource(cfg *DynamicConfig, filePath string) error {
+	if err := validateResourceName(addName); err != nil {
+		return err
+	}
+	if err := validatePassthrough("http", addDomain, splitCSV(addEntrypoint), addPassthrough, defaultStaticConfigPath); err != nil {
+		return err
+	}
+	rule, err := hostRule(addDomain, "http")
+	if err != nil {
+		return err
+	}
+	svcName, err := resourceServiceName(addName, addAddress, addService, "http", filePath)
+	if err != nil {
+		return err
+	}
 	if cfg.HTTP == nil {
 		cfg.HTTP = &HTTPConfig{}
 	}
@@ -115,20 +137,13 @@ func addHTTPResource(cfg *DynamicConfig, filePath string) error {
 		return fmt.Errorf("router '%s' already exists", addName)
 	}
 
-	// Build router rule
-	rule := "PathPrefix(`/`)"
-	if addDomain != "" {
-		rule = fmt.Sprintf("Host(`%s`)", addDomain)
-	}
-
-	svcName := addName + "-svc"
-
 	// Create router
 	router := &Router{
 		Rule:        rule,
-		EntryPoints: []string{addEntrypoint},
+		EntryPoints: splitCSV(addEntrypoint),
 		Service:     svcName,
-		Middlewares: addMiddlewares,
+		Middlewares: flattenCSV(addMiddlewares),
+		Priority:    addPriority,
 	}
 
 	if addTLS || addCertResolver != "" {
@@ -162,15 +177,16 @@ func addHTTPResource(cfg *DynamicConfig, filePath string) error {
 		logger.Info("Created HTTP redirect router '%s' -> websecure via middleware '%s'", httpRouterName, redirectMWName)
 	}
 
-	// Create service
-	cfg.HTTP.Services[svcName] = &Service{
-		LoadBalancer: &LoadBalancer{
-			Servers: []ServerURL{
-				{URL: fmt.Sprintf("http://%s", addAddress)},
+	// Create a service only when an address was supplied.
+	if addService == "" {
+		cfg.HTTP.Services[svcName] = &Service{
+			LoadBalancer: &LoadBalancer{
+				Servers: []ServerURL{
+					{URL: fmt.Sprintf("http://%s", addAddress)},
+				},
 			},
-		},
+		}
 	}
-
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return permissionHint("create dynamic config directory", filepath.Dir(filePath), err)
@@ -190,6 +206,23 @@ func addHTTPResource(cfg *DynamicConfig, filePath string) error {
 }
 
 func addTCPResource(cfg *DynamicConfig, filePath string) error {
+	if err := validateResourceName(addName); err != nil {
+		return err
+	}
+	if addRedirectHTTPS || addCertResolver != "" {
+		return fmt.Errorf("--redirect-https and --cert-resolver are HTTP-only options")
+	}
+	rule, err := hostRule(addDomain, "tcp")
+	if err != nil {
+		return err
+	}
+	if err := validatePassthrough("tcp", addDomain, splitCSV(addEntrypoint), addPassthrough, defaultStaticConfigPath); err != nil {
+		return err
+	}
+	svcName, err := resourceServiceName(addName, addAddress, addService, "tcp", filePath)
+	if err != nil {
+		return err
+	}
 	if cfg.TCP == nil {
 		cfg.TCP = &TCPConfig{}
 	}
@@ -205,24 +238,27 @@ func addTCPResource(cfg *DynamicConfig, filePath string) error {
 		return fmt.Errorf("TCP router '%s' already exists", addName)
 	}
 
-	svcName := addName + "-svc"
-
 	// Create router
 	cfg.TCP.Routers[addName] = &TCPRouter{
-		Rule:        "HostSNI(`*`)",
-		EntryPoints: []string{addEntrypoint},
+		Rule:        rule,
+		Middlewares: flattenCSV(addMiddlewares),
+		Priority:    addPriority,
+		EntryPoints: splitCSV(addEntrypoint),
 		Service:     svcName,
 	}
 
-	// Create service
-	cfg.TCP.Services[svcName] = &TCPService{
-		LoadBalancer: &TCPLoadBalancer{
-			Servers: []ServerAddress{
-				{Address: addAddress},
-			},
-		},
+	if addTLS || addPassthrough || (addDomain != "" && addDomain != "*") {
+		cfg.TCP.Routers[addName].TLS = &TLSConf{Passthrough: addPassthrough}
 	}
-
+	if addService == "" {
+		cfg.TCP.Services[svcName] = &TCPService{
+			LoadBalancer: &TCPLoadBalancer{
+				Servers: []ServerAddress{
+					{Address: addAddress},
+				},
+			},
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return permissionHint("create dynamic config directory", filepath.Dir(filePath), err)
 	}

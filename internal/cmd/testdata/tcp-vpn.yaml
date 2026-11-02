@@ -1,0 +1,14 @@
+tcp:
+  routers:
+    admin-vpn:
+      rule: HostSNI(`admin.example.com`)
+      priority: 100
+      entryPoints: [websecure]
+      middlewares: [vpn-only]
+      service: shared-https
+      tls:
+        passthrough: true
+  middlewares:
+    vpn-only:
+      ipAllowList:
+        sourceRange: [10.99.0.0/24]

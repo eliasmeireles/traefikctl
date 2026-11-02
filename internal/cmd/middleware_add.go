@@ -9,10 +9,11 @@ import (
 )
 
 var (
-	mwAddName string
-	mwAddType string
-	mwAddFile string
-	mwAddOpts []string
+	mwAddProtocol string
+	mwAddName     string
+	mwAddType     string
+	mwAddFile     string
+	mwAddOpts     []string
 )
 
 var middlewareAddCmd = &cobra.Command{
@@ -25,6 +26,8 @@ Types and required --opt keys:
   rate-limit       average=100   burst=50
   basic-auth       users=user1:hash,user2:hash
   strip-prefix     prefixes=/api,/v1
+  ip-allowlist     sourcerange=10.99.0.0/24 (HTTP or TCP)
+  ip-whitelist     sourcerange=10.99.0.0/24 (deprecated HTTP legacy alias)
 
 Examples:
   traefikctl middleware add --name redirect-https --type redirect-https
@@ -34,6 +37,7 @@ Examples:
 }
 
 func init() {
+	middlewareAddCmd.Flags().StringVar(&mwAddProtocol, "protocol", "http", "Middleware protocol: http or tcp")
 	middlewareAddCmd.Flags().StringVar(&mwAddName, "name", "", "Middleware name")
 	middlewareAddCmd.Flags().StringVar(&mwAddType, "type", "", "Middleware type")
 	middlewareAddCmd.Flags().StringVar(&mwAddFile, "file", "", "Dynamic config file")
@@ -57,7 +61,7 @@ func runMiddlewareAdd(cmd *cobra.Command, args []string) error {
 
 	opts := parseKeyValuePairs(mwAddOpts)
 
-	if err := addMiddleware(mwAddName, mwAddType, opts, filePath); err != nil {
+	if err := addMiddlewareForProtocol(mwAddName, mwAddType, mwAddProtocol, opts, filePath); err != nil {
 		return err
 	}
 

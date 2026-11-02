@@ -9,6 +9,9 @@ import (
 	"github.com/eliasmeireles/traefikctl/internal/logger"
 )
 
+var mwListFile string
+var mwListProtocol string
+
 var middlewareListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List all configured middlewares",
@@ -17,13 +20,24 @@ var middlewareListCmd = &cobra.Command{
 }
 
 func init() {
+	middlewareListCmd.Flags().StringVar(&mwListFile, "file", "", "List only this dynamic file")
+	middlewareListCmd.Flags().StringVar(&mwListProtocol, "protocol", "", "Filter by http or tcp (default: both)")
 	middlewareCmd.AddCommand(middlewareListCmd)
 }
 
 func runMiddlewareList(cmd *cobra.Command, args []string) error {
-	files, err := listDynamicFiles()
-	if err != nil {
-		return err
+	if mwListProtocol != "" && mwListProtocol != "http" && mwListProtocol != "tcp" {
+		return fmt.Errorf("invalid --protocol %q: expected http or tcp", mwListProtocol)
+	}
+	var files []string
+	if mwListFile != "" {
+		files = []string{mwListFile}
+	} else {
+		var err error
+		files, err = listDynamicFiles()
+		if err != nil {
+			return err
+		}
 	}
 
 	total := 0
@@ -35,21 +49,12 @@ func runMiddlewareList(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		if cfg.HTTP == nil || len(cfg.HTTP.Middlewares) == 0 {
-			continue
-		}
-
 		fmt.Printf("\n%s\n", filePath)
-
-		keys := make([]string, 0, len(cfg.HTTP.Middlewares))
-		for k := range cfg.HTTP.Middlewares {
-			keys = append(keys, k)
+		if cfg.HTTP != nil && mwListProtocol != "tcp" {
+			total += printMiddlewares("HTTP", cfg.HTTP.Middlewares)
 		}
-		sort.Strings(keys)
-
-		for _, name := range keys {
-			fmt.Printf("  %-30s  %s\n", name, middlewareSummary(cfg.HTTP.Middlewares[name]))
-			total++
+		if cfg.TCP != nil && mwListProtocol != "http" {
+			total += printMiddlewares("TCP", cfg.TCP.Middlewares)
 		}
 	}
 
@@ -58,8 +63,25 @@ func runMiddlewareList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// printMiddlewares prints a sorted protocol-specific middleware listing.
+func printMiddlewares(protocol string, middlewares map[string]*MiddlewareConfig) int {
+	keys := make([]string, 0, len(middlewares))
+	for name := range middlewares {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	for _, name := range keys {
+		fmt.Printf("  [%s] %-30s  %s\n", protocol, name, middlewareSummary(middlewares[name]))
+	}
+	return len(keys)
+}
+
 func middlewareSummary(mw *MiddlewareConfig) string {
 	switch {
+	case mw.IPAllowList != nil:
+		return fmt.Sprintf("ip-allowlist (sourceRange=%v)", mw.IPAllowList.SourceRange)
+	case mw.IPWhiteList != nil:
+		return fmt.Sprintf("ip-whitelist (deprecated, sourceRange=%v)", mw.IPWhiteList.SourceRange)
 	case mw.RedirectScheme != nil:
 		return fmt.Sprintf("redirect-https (scheme=%s, permanent=%v)", mw.RedirectScheme.Scheme, mw.RedirectScheme.Permanent)
 	case mw.RateLimit != nil:

@@ -16,17 +16,12 @@ var (
 	copyDomain  string
 	copySrcFile string
 	copyDstFile string
+	copyChanges routeChanges
 )
 
 var resourceCopyCmd = &cobra.Command{
-	Use:   "copy",
-	Short: "Clone an existing router to a new name and optional domain",
-	Long: `Copy a router and its service to a new name.
-The original is not modified. Optionally point the copy at a different domain.
-
-Examples:
-  traefikctl resource copy --from my-app --name my-app-staging --domain staging.example.com
-  traefikctl resource copy --from my-app --name my-app-v2`,
+	Use:          "copy",
+	Short:        "Clone an HTTP or TCP router with optional changes",
 	SilenceUsage: true,
 	RunE:         runResourceCopy,
 }
@@ -34,13 +29,12 @@ Examples:
 func init() {
 	resourceCopyCmd.Flags().StringVar(&copyFrom, "from", "", "Source router name")
 	resourceCopyCmd.Flags().StringVar(&copyName, "name", "", "Destination router name")
-	resourceCopyCmd.Flags().StringVar(&copyDomain, "domain", "", "New domain for the copy (optional)")
+	resourceCopyCmd.Flags().Var(domainFlag{&copyDomain}, "domain", "Replacement hostnames (repeatable or comma-separated)")
 	resourceCopyCmd.Flags().StringVar(&copySrcFile, "file", "", "Source dynamic config file")
-	resourceCopyCmd.Flags().StringVar(&copyDstFile, "dest", "", "Destination file (defaults to same as source)")
-
+	resourceCopyCmd.Flags().StringVar(&copyDstFile, "dest", "", "Destination file (defaults to source)")
+	bindRouteChanges(resourceCopyCmd, &copyChanges)
 	_ = resourceCopyCmd.MarkFlagRequired("from")
 	_ = resourceCopyCmd.MarkFlagRequired("name")
-
 	resourceCmd.AddCommand(resourceCopyCmd)
 }
 
@@ -48,90 +42,57 @@ func runResourceCopy(cmd *cobra.Command, args []string) error {
 	if err := requireRoot(); err != nil {
 		return err
 	}
-
 	srcFile, err := selectDynamicFile(copySrcFile)
 	if err != nil {
 		return err
 	}
-
-	dstFile := srcFile
-	if copyDstFile != "" {
-		dstFile = copyDstFile
+	dstFile := copyDstFile
+	if dstFile == "" {
+		dstFile = srcFile
 	}
-
-	if err := copyRouter(copyFrom, copyName, copyDomain, srcFile, dstFile); err != nil {
+	copyChanges.domains = copyDomain
+	copyChanges.readChangedFlags(cmd)
+	if err := copyRouterWithChanges(copyFrom, copyName, srcFile, dstFile, copyChanges); err != nil {
 		return err
 	}
-
-	logger.Info("Router '%s' copied to '%s'", copyFrom, copyName)
-	if copyDomain != "" {
-		logger.Info("  New rule: Host(`%s`)", copyDomain)
-	}
-	logger.Info("Config saved: %s (Traefik will auto-reload)", dstFile)
+	logger.Info("Router '%s' copied to '%s' in %s", copyFrom, copyName, dstFile)
 	return nil
 }
 
-// copyRouter duplicates a router and its associated service under a new name.
-// If newDomain is non-empty, the copy gets Host(`newDomain`) as its rule.
-// Returns an error if the destination router name already exists.
-func copyRouter(srcName, dstName, newDomain, srcFile, dstFile string) error {
+// copyRouter clones a route with optional replacement hostnames.
+func copyRouter(srcName, dstName, domains, srcFile, dstFile string) error {
+	return copyRouterWithChanges(srcName, dstName, srcFile, dstFile, routeChanges{domains: domains})
+}
+
+// copyRouterWithChanges clones a route, preserving TLS, middleware and external services.
+func copyRouterWithChanges(srcName, dstName, srcFile, dstFile string, changes routeChanges) error {
+	if err := validateResourceName(srcName); err != nil {
+		return err
+	}
+	if err := validateResourceName(dstName); err != nil {
+		return err
+	}
 	src, err := loadDynamicConfig(srcFile)
 	if err != nil {
 		return err
 	}
-
-	if src.HTTP == nil {
+	dst, err := loadDynamicConfig(dstFile)
+	if err != nil {
+		return err
+	}
+	switch {
+	case src.HTTP != nil && src.HTTP.Routers[srcName] != nil && changes.protocol != "tcp":
+		err = copyHTTPRouter(src, dst, srcName, dstName, dstFile, changes)
+	case src.TCP != nil && src.TCP.Routers[srcName] != nil:
+		err = copyTCPRouter(src, dst, srcName, dstName, dstFile, changes)
+	default:
 		return fmt.Errorf("router '%s' not found", srcName)
 	}
-
-	srcRouter, ok := src.HTTP.Routers[srcName]
-	if !ok {
-		return fmt.Errorf("router '%s' not found", srcName)
+	if err != nil {
+		return err
 	}
-
-	var dst *DynamicConfig
-	if srcFile == dstFile {
-		dst = src
-	} else if _, statErr := os.Stat(dstFile); os.IsNotExist(statErr) {
-		dst = &DynamicConfig{}
-	} else {
-		dst, err = loadDynamicConfig(dstFile)
-		if err != nil {
-			return err
-		}
-	}
-
-	if dst.HTTP == nil {
-		dst.HTTP = &HTTPConfig{Routers: map[string]*Router{}, Services: map[string]*Service{}}
-	}
-
-	if _, exists := dst.HTTP.Routers[dstName]; exists {
-		return fmt.Errorf("router '%s' already exists in destination", dstName)
-	}
-
-	newSvcName := dstName + "-svc"
-
-	rule := srcRouter.Rule
-	if newDomain != "" {
-		rule = fmt.Sprintf("Host(`%s`)", newDomain)
-	}
-
-	dst.HTTP.Routers[dstName] = &Router{
-		Rule:        rule,
-		EntryPoints: append([]string{}, srcRouter.EntryPoints...),
-		Service:     newSvcName,
-		Priority:    srcRouter.Priority,
-	}
-
-	newSvc := &Service{LoadBalancer: &LoadBalancer{}}
-	if srcSvc := src.HTTP.Services[srcRouter.Service]; srcSvc != nil && srcSvc.LoadBalancer != nil {
-		newSvc.LoadBalancer.Servers = append([]ServerURL{}, srcSvc.LoadBalancer.Servers...)
-	}
-	dst.HTTP.Services[newSvcName] = newSvc
-
 	if err := os.MkdirAll(filepath.Dir(dstFile), 0755); err != nil {
-		return fmt.Errorf("failed to create destination dir: %w", err)
+		return err
 	}
-
 	return saveDynamicConfig(dstFile, dst)
 }

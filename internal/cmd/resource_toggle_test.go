@@ -84,3 +84,26 @@ func TestDisableAndEnableTCPRouter(t *testing.T) {
 		require.Contains(t, reactivated.TCP.Routers, "pg")
 	})
 }
+
+func TestDisableTCPRouterPreservesMiddlewareAndSharedService(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "routes.yaml")
+	snapshots := filepath.Join(dir, "disabled")
+	require.NoError(t, saveDynamicConfig(file, &DynamicConfig{TCP: &TCPConfig{
+		Routers:     map[string]*TCPRouter{"admin-vpn": {Rule: "HostSNI(`admin.example.com`)", Service: "shared-https", EntryPoints: []string{"websecure"}, Middlewares: []string{"vpn-only"}, TLS: &TLSConf{Passthrough: true}}},
+		Services:    map[string]*TCPService{"shared-https": {LoadBalancer: &TCPLoadBalancer{Servers: []ServerAddress{{Address: "192.0.2.1:443"}}}}},
+		Middlewares: map[string]*MiddlewareConfig{"vpn-only": {IPAllowList: &IPAllowList{SourceRange: []string{"10.99.0.0/24"}}}},
+	}}))
+	require.NoError(t, disableRouter("admin-vpn", file, snapshots))
+	disabled, err := loadDynamicConfig(file)
+	require.NoError(t, err)
+	require.Contains(t, disabled.TCP.Middlewares, "vpn-only")
+	require.Contains(t, disabled.TCP.Services, "shared-https")
+	require.Empty(t, disabled.TCP.Routers)
+	require.NoError(t, enableRouter("admin-vpn", file, snapshots))
+	enabled, err := loadDynamicConfig(file)
+	require.NoError(t, err)
+	require.Contains(t, enabled.TCP.Routers, "admin-vpn")
+	require.Contains(t, enabled.TCP.Middlewares, "vpn-only")
+	require.Contains(t, enabled.TCP.Services, "shared-https")
+}
